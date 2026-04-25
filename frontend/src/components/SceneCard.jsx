@@ -130,7 +130,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
     <>
       <div className={`bg-white rounded-2xl border shadow-sm flex flex-col overflow-hidden transition-all hover:shadow-md ${status === 'video_done' ? 'border-green-200' : isGenerating ? 'border-amber-200 shadow-amber-100' : 'border-gray-200'}`}>
         {/* Header */}
-        <div className="bg-gray-50 border-b border-gray-100 px-4 py-3 flex justify-between items-start gap-2">
+        <div className="bg-gray-50 border-b border-gray-100 px-3 py-2 flex justify-between items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Scene {index + 1}</span>
@@ -157,9 +157,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
           </span>
         </div>
 
-        <div className="p-4 flex-1 flex flex-col gap-3">
+        <div className="p-3 flex-1 flex flex-col gap-2">
           {/* Scene summary */}
-          <div className="group relative border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 p-2 -mx-2 rounded-xl transition-colors cursor-pointer" onClick={() => setScriptModal(true)}>
+          <div className="group relative border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 p-1.5 -mx-1.5 rounded-lg transition-colors cursor-pointer" onClick={() => setScriptModal(true)}>
             <p className="text-sm text-gray-600 line-clamp-2">{scene.summary}</p>
             <p className="text-[11px] text-gray-400 mt-1">📍 {scene.location} · {scene.timeOfDay}</p>
             <button className="absolute top-2 right-2 bg-white text-indigo-600 hover:text-indigo-800 text-[10px] px-2 py-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity font-semibold border border-indigo-100">
@@ -168,7 +168,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
           </div>
 
           {/* Dialogue — editable inline */}
-          <div className="bg-gradient-to-br from-slate-50 to-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 space-y-1.5">
+          <div className="bg-gradient-to-br from-slate-50 to-indigo-50 border border-indigo-100 rounded-xl px-2.5 py-2 space-y-1">
             <div className="flex items-center justify-between">
               <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">🎙 Dialogue</div>
               <input
@@ -207,7 +207,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
           </div>
 
           {/* Progress indicators */}
-          <div className="flex gap-3 text-[11px] font-bold uppercase tracking-wider bg-gray-50 rounded-lg p-2 border border-gray-100">
+          <div className="flex gap-2 text-[10px] font-bold uppercase tracking-wider bg-gray-50 rounded-lg p-1.5 border border-gray-100 overflow-x-auto">
             {[['Img Prompt', hasImgP], ['Image', hasImg], ['Vid Prompt', hasVidP], ['Video', hasVid]].map(([label, done]) => (
               <div key={label} className={`flex items-center gap-1 ${done ? 'text-green-600' : 'text-gray-300'}`}>
                 {done ? <span className="bg-green-100 text-green-700 rounded-full w-4 h-4 flex items-center justify-center text-[10px]">✓</span> : <span className="border-2 border-gray-200 rounded-full w-4 h-4" />}
@@ -299,11 +299,11 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
       {/* Image Modal */}
       <Modal isOpen={imgModal} onClose={() => setImgModal(false)} title={`${scene.title || `Scene ${index + 1}`} — Image`}>
         <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 flex flex-col flex-1 shadow-inner min-h-0">
-            <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-4 block">📝 Image Prompt</label>
-            <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-sm border-0 shadow-sm rounded-2xl p-4 mb-4 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-0" />
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex flex-col flex-1 shadow-inner min-h-0">
+            <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-2 block">📝 Image Prompt</label>
+            <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 mb-2 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-[150px]" />
             
-            <div className="space-y-2 mb-4 bg-white/50 p-3 rounded-xl border border-indigo-100">
+            <div className="space-y-1.5 mb-2 bg-white/50 p-2.5 rounded-xl border border-indigo-100">
               <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
               <div className="flex gap-2">
                 <input 
@@ -337,7 +337,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
       {/* Video Modal */}
       <Modal isOpen={vidModal} onClose={() => setVidModal(false)} title={`${scene.title || `Scene ${index + 1}`} — Video`}>
         <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
-            <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 space-y-4 flex flex-col flex-1 shadow-inner min-h-0">
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-2 flex flex-col flex-1 shadow-inner min-h-0">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-black text-indigo-800 uppercase tracking-widest">🎬 Video Prompt</label>
                 <select
@@ -355,15 +355,15 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
                 </select>
               </div>
               {/* Dialogue editor in modal */}
-              <div className="bg-white border border-indigo-200 rounded-2xl p-3 space-y-2">
+              <div className="bg-white border border-indigo-200 rounded-xl p-2.5 space-y-1.5">
                 <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">🎙 Dialogue (feeds into prompt)</div>
                 <textarea
                   value={localDialogue}
                   onChange={e => setLocalDialogue(e.target.value)}
                   onBlur={() => saveDialogue(localDialogue, localTone, localPacing, localLang)}
-                  rows={2}
+                  rows={1}
                   placeholder="Type spoken line here…"
-                  className="w-full text-sm text-gray-800 italic bg-indigo-50 border border-indigo-100 rounded-xl px-3 py-2 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
+                  className="w-full text-xs text-gray-800 italic bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
                 />
                 <div className="flex gap-2">
                   <input value={localLang} onChange={e => setLocalLang(e.target.value)} onBlur={() => saveDialogue(localDialogue, localTone, localPacing, localLang)} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 w-20 text-center font-semibold focus:outline-none" placeholder="Language" />
@@ -394,9 +394,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
                 </div>
               ) : (
                 <>
-                  <textarea value={localVid} onChange={e => setLocalVid(e.target.value)} onBlur={() => updateScene(scene.id, { videoPrompt: localVid })} className="flex-1 w-full text-sm border-0 shadow-sm rounded-2xl p-4 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-0" />
+                  <textarea value={localVid} onChange={e => setLocalVid(e.target.value)} onBlur={() => updateScene(scene.id, { videoPrompt: localVid })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-[150px]" />
                   
-                  <div className="space-y-2 mt-4 bg-white/50 p-3 rounded-xl border border-indigo-100">
+                  <div className="space-y-1.5 mt-2 bg-white/50 p-2.5 rounded-xl border border-indigo-100">
                     <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
                     <div className="flex gap-2">
                       <input 
