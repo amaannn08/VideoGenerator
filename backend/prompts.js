@@ -71,7 +71,7 @@ ${script}
 // IMAGE PROMPT GENERATOR
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getImagePromptGenerationPrompt(scene, character, previousSceneImageDesc, sceneIndex, totalScenes) {
+function getImagePromptGenerationPrompt(scene, character, previousSceneImageDesc, sceneIndex, totalScenes, customInstruction) {
   const isFirstScene = sceneIndex === 0;
   const continuityNote = isFirstScene
     ? `This is scene 1 of ${totalScenes}. Establish the character clearly from scratch.`
@@ -103,6 +103,7 @@ Camera Work: ${scene.cameraWork}
 Transition Into This Scene: ${scene.transitionFrom || 'Opening scene'}
 ${prevNote}
 
+${customInstruction ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUSER CUSTOM INSTRUCTION:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${customInstruction}\nMake sure to incorporate this specific instruction into the final prompt.\n` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CHARACTER ANCHOR (copy these descriptors VERBATIM into the prompt — never deviate):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -140,7 +141,7 @@ Output ONLY valid JSON. Nothing else.
 // VIDEO PROMPT GENERATOR
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getVideoPromptGenerationPrompt(scene, character, sceneIndex, totalScenes) {
+function getVideoPromptGenerationPrompt(scene, character, sceneIndex, totalScenes, customInstruction) {
   // Normalise dialogue — handle both nested object and flat fields (for backward compat)
   const dlg = scene.dialogue || {};
   const dialogueText = (dlg.text || scene.dialogueText || '').trim();
@@ -181,6 +182,7 @@ Duration: ${scene.duration} seconds
 Transition From Previous: ${scene.transitionFrom || 'Opening scene — establish character and world'}
 Transition Into Next: ${scene.transitionTo || 'Final scene — resolve the emotional arc'}
 
+${customInstruction ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUSER CUSTOM INSTRUCTION:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${customInstruction}\nMake sure to incorporate this specific instruction into the final prompt.\n` : ''}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 CHARACTER (reference image is attached — match exactly):
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

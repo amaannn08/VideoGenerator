@@ -46,6 +46,8 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const [localTimeOfDay, setLocalTimeOfDay] = useState(scene.timeOfDay || '');
   const [localTitle, setLocalTitle] = useState(scene.title || '');
   const [localDuration, setLocalDuration] = useState(scene.duration || 8);
+  const [imgCustomInstruction, setImgCustomInstruction] = useState(scene.imgCustomInstruction || '');
+  const [vidCustomInstruction, setVidCustomInstruction] = useState(scene.vidCustomInstruction || '');
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
@@ -56,6 +58,8 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   useEffect(() => setLocalTimeOfDay(scene.timeOfDay || ''), [scene.timeOfDay]);
   useEffect(() => setLocalTitle(scene.title || ''), [scene.title]);
   useEffect(() => setLocalDuration(scene.duration || 8), [scene.duration]);
+  useEffect(() => setImgCustomInstruction(scene.imgCustomInstruction || ''), [scene.imgCustomInstruction]);
+  useEffect(() => setVidCustomInstruction(scene.vidCustomInstruction || ''), [scene.vidCustomInstruction]);
 
   const saveDialogue = (text, tone, pacing, lang) => {
     updateScene(scene.id, { dialogue: { ...(scene.dialogue || {}), text, tone, pacing, language: lang } });
@@ -73,7 +77,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const genImgPrompt = async () => {
     updateScene(scene.id, { status: 'generating_image_prompt' });
     try {
-      const r = await fetch(`${API}/api/prompts/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: globalCharacter, previousSceneImageDesc: previousSceneImage, sceneIndex: index, totalScenes }), signal: signal() });
+      const r = await fetch(`${API}/api/prompts/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: globalCharacter, previousSceneImageDesc: previousSceneImage, sceneIndex: index, totalScenes, customInstruction: imgCustomInstruction }), signal: signal() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       updateScene(scene.id, { imagePrompt: d.imagePrompt, status: 'image_prompt_ready' });
@@ -94,7 +98,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const genVidPrompt = async () => {
     updateScene(scene.id, { status: 'generating_video_prompt' });
     try {
-      const r = await fetch(`${API}/api/prompts/video`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: globalCharacter, sceneIndex: index, totalScenes }), signal: signal() });
+      const r = await fetch(`${API}/api/prompts/video`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: globalCharacter, sceneIndex: index, totalScenes, customInstruction: vidCustomInstruction }), signal: signal() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       updateScene(scene.id, { videoPrompt: d.videoPrompt, duration: d.duration || scene.duration, status: 'video_prompt_ready' });
@@ -295,10 +299,25 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
       {/* Image Modal */}
       <Modal isOpen={imgModal} onClose={() => setImgModal(false)} title={`${scene.title || `Scene ${index + 1}`} — Image`}>
         <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 space-y-4 flex flex-col flex-1 shadow-inner min-h-0">
-            <label className="text-xs font-black text-indigo-800 uppercase tracking-widest">📝 Image Prompt</label>
-            <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-sm border-0 shadow-sm rounded-2xl p-4 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-0" />
-            <button onClick={genImgPrompt} disabled={isGenerating} className="w-full text-xs font-bold bg-white border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-100 px-4 py-3 rounded-xl disabled:opacity-50">↻ Regenerate Prompt</button>
+          <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 flex flex-col flex-1 shadow-inner min-h-0">
+            <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-4 block">📝 Image Prompt</label>
+            <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-sm border-0 shadow-sm rounded-2xl p-4 mb-4 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-0" />
+            
+            <div className="space-y-2 mb-4 bg-white/50 p-3 rounded-xl border border-indigo-100">
+              <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
+              <div className="flex gap-2">
+                <input 
+                  type="text" 
+                  value={imgCustomInstruction} 
+                  onChange={e => setImgCustomInstruction(e.target.value)} 
+                  onBlur={() => updateScene(scene.id, { imgCustomInstruction })}
+                  placeholder="e.g. 'Make it rain', 'Angry expression'" 
+                  className="flex-1 text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none"
+                />
+                <button onClick={genImgPrompt} disabled={isGenerating} className="text-xs font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg disabled:opacity-50 shrink-0">↻ Regenerate</button>
+              </div>
+            </div>
+
             {hasImgP && <Btn onClick={status === 'image_generating' ? handleStop : genImage} variant={status === 'image_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-auto shrink-0">{status === 'image_generating' ? <><Spinner size={18} color="border-white" />Stop</> : 'Generate Image'}</Btn>}
           </div>
           <div className="flex-1 flex flex-col min-w-[280px] min-h-0">
@@ -376,8 +395,23 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
               ) : (
                 <>
                   <textarea value={localVid} onChange={e => setLocalVid(e.target.value)} onBlur={() => updateScene(scene.id, { videoPrompt: localVid })} className="flex-1 w-full text-sm border-0 shadow-sm rounded-2xl p-4 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-0" />
-                  <button onClick={genVidPrompt} disabled={isGenerating} className="w-full text-xs font-bold bg-white border-2 border-indigo-200 text-indigo-600 hover:bg-indigo-100 px-4 py-3 rounded-xl disabled:opacity-50">↻ Regenerate Prompt</button>
-                  {hasVidP && <Btn onClick={status === 'video_generating' ? handleStop : genVideo} variant={status === 'video_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-auto shrink-0">{status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : 'Generate Video (Veo 3)'}</Btn>}
+                  
+                  <div className="space-y-2 mt-4 bg-white/50 p-3 rounded-xl border border-indigo-100">
+                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
+                    <div className="flex gap-2">
+                      <input 
+                        type="text" 
+                        value={vidCustomInstruction} 
+                        onChange={e => setVidCustomInstruction(e.target.value)} 
+                        onBlur={() => updateScene(scene.id, { vidCustomInstruction })}
+                        placeholder="e.g. 'Slow pan right', 'Character sighs'" 
+                        className="flex-1 text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none"
+                      />
+                      <button onClick={genVidPrompt} disabled={isGenerating} className="text-xs font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg disabled:opacity-50 shrink-0">↻ Regenerate</button>
+                    </div>
+                  </div>
+
+                  {hasVidP && <Btn onClick={status === 'video_generating' ? handleStop : genVideo} variant={status === 'video_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-4 shrink-0">{status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : 'Generate Video (Veo 3)'}</Btn>}
                 </>
               )}
             </div>

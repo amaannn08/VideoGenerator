@@ -44,6 +44,54 @@ export default function App() {
   const [autoRunProgress, setAutoRunProgress] = useState({}); // { sceneId: { stage, status } }
   const sseRef = useRef(null);
 
+  const [sessionId, setSessionId] = useState(() => new URLSearchParams(window.location.search).get('session'));
+  const [isInitializing, setIsInitializing] = useState(!!sessionId);
+  const [allSessions, setAllSessions] = useState([]);
+
+  // Fetch all sessions for dropdown
+  useEffect(() => {
+    fetch(`${API}/api/sessions`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.sessions) setAllSessions(data.sessions);
+      })
+      .catch(console.error);
+  }, []);
+
+  // Load session from DB
+  useEffect(() => {
+    if (sessionId) {
+      fetch(`${API}/api/sessions/${sessionId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (!data.error) {
+            setScript(data.script || '');
+            setGlobalCharacter(data.globalCharacter || '');
+            setNarrativeArc(data.narrativeArc || '');
+            setScenes(data.scenes || []);
+            setMergedVideo(data.mergedVideo || null);
+          }
+        })
+        .catch(console.error)
+        .finally(() => setIsInitializing(false));
+    } else {
+      setIsInitializing(false);
+    }
+  }, [sessionId]);
+
+  // Auto-save to DB when state changes
+  useEffect(() => {
+    if (!sessionId || isInitializing) return;
+    const timeout = setTimeout(() => {
+      fetch(`${API}/api/sessions/${sessionId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo })
+      }).catch(console.error);
+    }, 2000);
+    return () => clearTimeout(timeout);
+  }, [script, globalCharacter, narrativeArc, scenes, mergedVideo, sessionId, isInitializing]);
+
   const updateScene = useCallback((id, updates) => {
     setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
   }, [setScenes]);
@@ -53,6 +101,19 @@ export default function App() {
     if (!script.trim()) return;
     setLoadingScenes(true);
     try {
+      let currentSessionId = sessionId;
+      if (!currentSessionId) {
+        const sessRes = await fetch(`${API}/api/sessions`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ script, sceneCount })
+        });
+        const sessData = await sessRes.json();
+        currentSessionId = sessData.sessionId;
+        setSessionId(currentSessionId);
+        window.history.replaceState({}, '', '?session=' + currentSessionId);
+      }
+
       const r = await fetch(`${API}/api/scenes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ script, sceneCount }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
@@ -158,6 +219,8 @@ export default function App() {
     handleStopAutoRun();
     setScript(''); setScenes([]); setGlobalCharacter(''); setNarrativeArc(''); setMergedVideo(null);
     window.localStorage.clear();
+    setSessionId(null);
+    window.history.replaceState({}, '', window.location.pathname);
   };
 
   const allDone = scenes.length > 0 && scenes.every(s => Boolean(s.videoUrl));
@@ -173,6 +236,15 @@ export default function App() {
     return 'image_prompt';
   })();
 
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-[#f0f1f6] flex items-center justify-center flex-col gap-4">
+        <Spinner size={32} color="border-indigo-600" />
+        <p className="text-gray-500 font-semibold animate-pulse">Loading Session...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#f0f1f6] text-gray-900 font-sans pb-32">
       {/* Header */}
@@ -181,7 +253,39 @@ export default function App() {
           <h1 className="text-lg font-black text-gray-900 tracking-tight">Cinematic AI Reel Builder</h1>
           <p className="text-[11px] text-gray-400 uppercase tracking-widest mt-0.5">DeepSeek · Gemini · Veo 3</p>
         </div>
-        <button onClick={handleReset} className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2">🔄 Restart</button>
+        <div className="flex items-center gap-3">
+          <select 
+            value={sessionId || ''} 
+            onChange={(e) => {
+              if (e.target.value) {
+                window.location.href = '?session=' + e.target.value;
+              } else {
+                window.location.href = window.location.pathname;
+              }
+            }}
+            className="text-xs font-bold bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-lg hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px] sm:max-w-[300px] truncate cursor-pointer"
+          >
+            <option value="">+ New Session</option>
+            {allSessions.map(s => (
+              <option key={s.id} value={s.id}>
+                {s.narrative_arc ? s.narrative_arc.substring(0, 50) + (s.narrative_arc.length > 50 ? '...' : '') : `Session ${s.id}`}
+              </option>
+            ))}
+          </select>
+
+          {sessionId && (
+            <button 
+              onClick={() => {
+                navigator.clipboard.writeText(window.location.href);
+                alert('Session link copied to clipboard!');
+              }} 
+              className="text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-100 flex items-center gap-2"
+            >
+              🔗 Copy Share Link
+            </button>
+          )}
+          <button onClick={handleReset} className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2">🔄 Restart</button>
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">

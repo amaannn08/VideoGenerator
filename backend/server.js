@@ -10,6 +10,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import fetch from 'node-fetch';
 import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
+import { initDb, query } from './db.js';
 
 dotenv.config();
 
@@ -27,6 +28,9 @@ ffmpeg.setFfmpegPath(ffmpegStatic);
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Initialize PostgreSQL database
+initDb();
 
 // Init DeepSeek
 const openai = new OpenAI({
@@ -133,11 +137,11 @@ app.post('/api/scenes', async (req, res) => {
 
 app.post('/api/prompts/image', async (req, res) => {
   try {
-    const { scene, character, previousSceneImageDesc, sceneIndex = 0, totalScenes = 1 } = req.body;
+    const { scene, character, previousSceneImageDesc, sceneIndex = 0, totalScenes = 1, customInstruction } = req.body;
     if (!scene) return res.status(400).json({ error: 'scene is required' });
 
     const promptText = SYSTEM_PROMPTS.getImagePromptGenerationPrompt(
-      scene, character, previousSceneImageDesc, sceneIndex, totalScenes
+      scene, character, previousSceneImageDesc, sceneIndex, totalScenes, customInstruction
     );
 
     const completion = await openai.chat.completions.create({
@@ -160,11 +164,11 @@ app.post('/api/prompts/image', async (req, res) => {
 
 app.post('/api/prompts/video', async (req, res) => {
   try {
-    const { scene, character, sceneIndex = 0, totalScenes = 1 } = req.body;
+    const { scene, character, sceneIndex = 0, totalScenes = 1, customInstruction } = req.body;
     if (!scene) return res.status(400).json({ error: 'scene is required' });
 
     const promptText = SYSTEM_PROMPTS.getVideoPromptGenerationPrompt(
-      scene, character, sceneIndex, totalScenes
+      scene, character, sceneIndex, totalScenes, customInstruction
     );
 
     const completion = await openai.chat.completions.create({
@@ -635,6 +639,89 @@ app.post('/api/auto-run', async (req, res) => {
   }
 
   res.end();
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 7. SESSIONS
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/sessions', async (req, res) => {
+  try {
+    const { script, globalCharacter, narrativeArc, scenes, mergedVideo } = req.body;
+    const sessionId = Math.random().toString(36).substr(2, 9);
+    
+    await query(
+      'INSERT INTO sessions (id, script, global_character, narrative_arc, scenes, merged_video) VALUES ($1, $2, $3, $4, $5, $6)',
+      [sessionId, script || '', globalCharacter || '', narrativeArc || '', JSON.stringify(scenes || []), mergedVideo || null]
+    );
+    
+    res.json({ sessionId });
+  } catch (error) {
+    console.error('Error creating session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const result = await query('SELECT id, narrative_arc, updated_at FROM sessions ORDER BY updated_at DESC');
+    res.json({ sessions: result.rows });
+  } catch (error) {
+    console.error('Error fetching all sessions:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.get('/api/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('SELECT * FROM sessions WHERE id = $1', [id]);
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    const row = result.rows[0];
+    res.json({
+      id: row.id,
+      script: row.script,
+      globalCharacter: row.global_character,
+      narrativeArc: row.narrative_arc,
+      scenes: row.scenes,
+      mergedVideo: row.merged_video
+    });
+  } catch (error) {
+    console.error('Error fetching session:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.put('/api/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { script, globalCharacter, narrativeArc, scenes, mergedVideo } = req.body;
+    
+    const result = await query(
+      `UPDATE sessions 
+       SET script = COALESCE($1, script), 
+           global_character = COALESCE($2, global_character), 
+           narrative_arc = COALESCE($3, narrative_arc), 
+           scenes = COALESCE($4, scenes), 
+           merged_video = COALESCE($5, merged_video),
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 RETURNING id`,
+      [script, globalCharacter, narrativeArc, scenes ? JSON.stringify(scenes) : null, mergedVideo, id]
+    );
+    
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error updating session:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
