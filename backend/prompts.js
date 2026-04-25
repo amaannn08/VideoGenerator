@@ -22,7 +22,7 @@ ${countInstruction} that form a CONTINUOUS, EMOTIONALLY LINKED narrative — lik
 CRITICAL RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Each scene must represent exactly 4, 6, or 8 seconds of screen time.
-2. EXTRACT DIALOGUE DIRECTLY from the script — do not invent lines. If the script has spoken words, they belong in the "dialogue.text" field verbatim.
+2. EXTRACT DIALOGUE DIRECTLY from the script — do not invent lines. If the script has spoken words, they belong in the "dialogue.text" field verbatim. IMPORTANT: If the dialogue is in Hindi or Hinglish, you MUST write the dialogue in the Devanagari script (e.g., 'नमस्ते' instead of 'namaste') in the "dialogue.text" field to ensure proper text-to-speech pronunciation.
 3. Maintain VISUAL CONTINUITY: describe how each scene flows from the previous one. The character must look identical in all scenes (same face, same attire, same build).
 4. The "character" field is the SINGLE SOURCE OF TRUTH for the character's appearance — it will be copy-pasted into every image and video prompt. Make it extremely detailed.
 5. "narrativeArc" is a one-sentence summary of the entire emotional journey across ALL scenes combined.
@@ -32,6 +32,7 @@ CRITICAL RULES:
 9. "cameraWork" should be one of: "slow push-in", "static wide", "tracking shot from side-back angle", "extreme close-up static", "crane down", "handheld with tension shake".
 10. "dialogue.tone" must be one of: "commanding and calm", "heavy and burdened", "whisper-like and introspective", "broken and raw", "quiet and resolute".
 11. "dialogue.pacing" describes delivery rhythm: e.g. "slow with long pauses between words", "clipped and intense", "breathless", "each word deliberate".
+12. BE EXTREMELY DESCRIPTIVE: Write vivid, highly detailed, and cinematic descriptions for 'summary', 'location', and 'emotionalTone'. Use sensory details and dense atmospheric language.
 
 Output ONLY a valid JSON object. No markdown fences, no explanation, no extra text.
 
@@ -42,9 +43,9 @@ Output ONLY a valid JSON object. No markdown fences, no explanation, no extra te
     {
       "id": "scene_1",
       "title": "Short cinematic title (4–6 words max)",
-      "summary": "What physically happens in this scene — concrete actions only, no dialogue",
-      "emotionalTone": "Precise emotional state of the character — describe their internal experience and how it shows on their face and body",
-      "location": "Specific visual setting description",
+      "summary": "Vivid, highly descriptive, and cinematic explanation of what physically happens in this scene. Describe actions, movement, and atmospheric interaction in dense detail. No dialogue.",
+      "emotionalTone": "Extremely detailed emotional state of the character — describe their internal experience, micro-expressions, posture, and exactly how the emotion manifests physically (e.g., 'quiet devastation, eyes hollow and unblinking, jaw tightly clenched, shoulders slumped under an invisible weight').",
+      "location": "Highly descriptive and immersive visual setting. Include atmospheric details like lighting, weather, dust, shadows, and surrounding elements.",
       "timeOfDay": "e.g. golden hour dusk, overcast post-battle morning",
       "duration": 8,
       "dialogue": {

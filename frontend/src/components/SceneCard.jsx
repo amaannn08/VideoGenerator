@@ -34,17 +34,28 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
+  const [scriptModal, setScriptModal] = useState(false);
   const [localImg, setLocalImg] = useState(scene.imagePrompt || '');
   const [localVid, setLocalVid] = useState(scene.videoPrompt || '');
   const [localDialogue, setLocalDialogue] = useState(scene.dialogue?.text || '');
   const [localTone, setLocalTone] = useState(scene.dialogue?.tone || 'calm and deliberate');
   const [localPacing, setLocalPacing] = useState(scene.dialogue?.pacing || 'slow with natural pauses');
   const [localLang, setLocalLang] = useState(scene.dialogue?.language || 'Hindi');
+  const [localSummary, setLocalSummary] = useState(scene.summary || '');
+  const [localLocation, setLocalLocation] = useState(scene.location || '');
+  const [localTimeOfDay, setLocalTimeOfDay] = useState(scene.timeOfDay || '');
+  const [localTitle, setLocalTitle] = useState(scene.title || '');
+  const [localDuration, setLocalDuration] = useState(scene.duration || 8);
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
   useEffect(() => setLocalVid(scene.videoPrompt || ''), [scene.videoPrompt]);
   useEffect(() => setLocalDialogue(scene.dialogue?.text || ''), [scene.dialogue?.text]);
+  useEffect(() => setLocalSummary(scene.summary || ''), [scene.summary]);
+  useEffect(() => setLocalLocation(scene.location || ''), [scene.location]);
+  useEffect(() => setLocalTimeOfDay(scene.timeOfDay || ''), [scene.timeOfDay]);
+  useEffect(() => setLocalTitle(scene.title || ''), [scene.title]);
+  useEffect(() => setLocalDuration(scene.duration || 8), [scene.duration]);
 
   const saveDialogue = (text, tone, pacing, lang) => {
     updateScene(scene.id, { dialogue: { ...(scene.dialogue || {}), text, tone, pacing, language: lang } });
@@ -119,7 +130,19 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Scene {index + 1}</span>
-              <span className="bg-gray-200 text-gray-600 text-[10px] px-1.5 py-0.5 rounded uppercase font-bold">{scene.duration}s</span>
+              <select
+                value={localDuration}
+                onChange={e => {
+                  const newDuration = parseInt(e.target.value, 10);
+                  setLocalDuration(newDuration);
+                  updateScene(scene.id, { duration: newDuration });
+                }}
+                className="bg-gray-200 text-gray-600 text-[10px] px-1.5 py-0.5 rounded uppercase font-bold focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
+              >
+                <option value={4}>4s</option>
+                <option value={6}>6s</option>
+                <option value={8}>8s</option>
+              </select>
               {scene.emotionalTone && <span className="bg-indigo-50 text-indigo-600 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-indigo-100 truncate max-w-[120px]" title={scene.emotionalTone}>🎭 {scene.emotionalTone.split(',')[0]}</span>}
             </div>
             {scene.title && <p className="font-bold text-gray-800 text-sm mt-0.5 truncate">{scene.title}</p>}
@@ -132,8 +155,13 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
 
         <div className="p-4 flex-1 flex flex-col gap-3">
           {/* Scene summary */}
-          <p className="text-sm text-gray-600 line-clamp-2">{scene.summary}</p>
-          <p className="text-[11px] text-gray-400">📍 {scene.location} · {scene.timeOfDay}</p>
+          <div className="group relative border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 p-2 -mx-2 rounded-xl transition-colors cursor-pointer" onClick={() => setScriptModal(true)}>
+            <p className="text-sm text-gray-600 line-clamp-2">{scene.summary}</p>
+            <p className="text-[11px] text-gray-400 mt-1">📍 {scene.location} · {scene.timeOfDay}</p>
+            <button className="absolute top-2 right-2 bg-white text-indigo-600 hover:text-indigo-800 text-[10px] px-2 py-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity font-semibold border border-indigo-100">
+              Edit Details
+            </button>
+          </div>
 
           {/* Dialogue — editable inline */}
           <div className="bg-gradient-to-br from-slate-50 to-indigo-50 border border-indigo-100 rounded-xl px-3 py-2.5 space-y-1.5">
@@ -212,6 +240,58 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
         </div>
       </div>
 
+      {/* Script Modal */}
+      <Modal isOpen={scriptModal} onClose={() => setScriptModal(false)} title={`Edit Scene ${index + 1} Details`}>
+        <div className="flex flex-col gap-5 p-2">
+          <div>
+            <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-1.5 block">Scene Title</label>
+            <input 
+              value={localTitle} 
+              onChange={e => setLocalTitle(e.target.value)} 
+              onBlur={() => updateScene(scene.id, { title: localTitle })}
+              className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white font-medium outline-none transition-all" 
+              placeholder="e.g. The King's Decree"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-1.5 block">Scene Action / Summary</label>
+            <textarea 
+              value={localSummary} 
+              onChange={e => setLocalSummary(e.target.value)} 
+              onBlur={() => updateScene(scene.id, { summary: localSummary })}
+              rows={5}
+              className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white resize-none font-medium leading-relaxed outline-none transition-all" 
+              placeholder="Describe the main action happening in the scene..."
+            />
+          </div>
+          <div className="flex gap-4">
+            <div className="flex-1">
+              <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-1.5 block">Location</label>
+              <input 
+                value={localLocation} 
+                onChange={e => setLocalLocation(e.target.value)} 
+                onBlur={() => updateScene(scene.id, { location: localLocation })}
+                className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white font-medium outline-none transition-all" 
+                placeholder="e.g. Royal Palace Courtyard"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-1.5 block">Time of Day</label>
+              <input 
+                value={localTimeOfDay} 
+                onChange={e => setLocalTimeOfDay(e.target.value)} 
+                onBlur={() => updateScene(scene.id, { timeOfDay: localTimeOfDay })}
+                className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white font-medium outline-none transition-all" 
+                placeholder="e.g. Golden Hour Dusk"
+              />
+            </div>
+          </div>
+          <div className="mt-4 flex justify-end">
+            <Btn onClick={() => setScriptModal(false)} className="px-6 py-2.5 text-base">Done Editing</Btn>
+          </div>
+        </div>
+      </Modal>
+
       {/* Image Modal */}
       <Modal isOpen={imgModal} onClose={() => setImgModal(false)} title={`${scene.title || `Scene ${index + 1}`} — Image`}>
         <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
@@ -241,7 +321,19 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             <div className="bg-indigo-50 border border-indigo-100 rounded-3xl p-6 space-y-4 flex flex-col flex-1 shadow-inner min-h-0">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-black text-indigo-800 uppercase tracking-widest">🎬 Video Prompt</label>
-                <span className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl">{scene.duration}s</span>
+                <select
+                  value={localDuration}
+                  onChange={e => {
+                    const newDuration = parseInt(e.target.value, 10);
+                    setLocalDuration(newDuration);
+                    updateScene(scene.id, { duration: newDuration });
+                  }}
+                  className="text-[10px] font-black bg-indigo-100 text-indigo-700 px-3 py-1.5 rounded-xl cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                >
+                  <option value={4}>4s</option>
+                  <option value={6}>6s</option>
+                  <option value={8}>8s</option>
+                </select>
               </div>
               {/* Dialogue editor in modal */}
               <div className="bg-white border border-indigo-200 rounded-2xl p-3 space-y-2">
