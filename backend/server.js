@@ -679,7 +679,7 @@ app.post('/api/sessions', async (req, res) => {
     const sessionId = Math.random().toString(36).substr(2, 9);
     
     await query(
-      'INSERT INTO sessions (id, script, global_character, narrative_arc, scenes, merged_video) VALUES ($1, $2, $3, $4, $5, $6)',
+      'INSERT INTO sessions (id, script, global_character, narrative_arc, scenes, merged_video) VALUES ($1, $2, $3, $4, $5::jsonb, $6)',
       [sessionId, script || '', globalCharacter || '', narrativeArc || '', JSON.stringify(scenes || []), mergedVideo || null]
     );
     
@@ -734,7 +734,7 @@ app.put('/api/sessions/:id', async (req, res) => {
        SET script = COALESCE($1, script), 
            global_character = COALESCE($2, global_character), 
            narrative_arc = COALESCE($3, narrative_arc), 
-           scenes = COALESCE($4, scenes), 
+           scenes = COALESCE($4::jsonb, scenes), 
            merged_video = COALESCE($5, merged_video),
            updated_at = CURRENT_TIMESTAMP
        WHERE id = $6 RETURNING id`,
