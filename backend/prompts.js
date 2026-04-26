@@ -169,6 +169,15 @@ Generate ONE flowing, dense video prompt — written as if you are directing bot
 - This rule applies to the opening sentence, dialogue attribution, and every other part of the prompt.
 - Violation of this rule will cause the video generation to be blocked entirely.
 
+⚠️ VERTEX AI RAI SAFETY RULES — MANDATORY TO AVOID CONTENT FILTER:
+- NEVER use the word "mature" to describe a person. Use "adult" or describe age through context only (e.g. "a young adult woman in her early twenties").
+- NEVER use phrases like "trembling lips", "quivering", "breath catching", "heaving", or any phrasing that could be interpreted as sexually suggestive — even in a completely non-sexual context.
+- NEVER over-describe a female character's body parts, build, or physical form beyond what is necessary for costume/attire context.
+- For physical reactions, use neutral language: "lips part slightly", "exhale visible", "a slow blink", "jaw relaxes", "gaze sharpens", "posture tightens".
+- NEVER describe a character as "sensual", "vulnerable", "soft", "fragile", or any term with physical-emotional ambiguity.
+- Keep ALL physical descriptions anchored to action, costume, and storytelling — not the body itself.
+- When in doubt, describe what the CHARACTER DOES, not what their body looks like.
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 SCENE CONTEXT:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -197,7 +206,7 @@ ${dialogueBlock}
 WEAVE ALL OF THESE LAYERS into the single flowing paragraph:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. OPENING STATEMENT: "I have attached an image of [PHYSICAL description only — NO names, e.g. 'a battle-worn ancient warrior king with brown skin in simple undyed robes']. Create a cinematic video in portrait (9:16) format where..." — NEVER use any real person's name here.
+1. OPENING STATEMENT: "I have attached an image of [PHYSICAL description only — NO names, NO 'mature', e.g. 'a young adult woman with warm brown skin in a patched earth-tone tunic']. Create a cinematic video in portrait (9:16) format where..." — NEVER use any real person's name. NEVER use the word 'mature'. Use neutral, action-focused language throughout.
 
 2. SHOT FRAMING: Specify the shot type (${scene.cameraWork}), where the character sits in frame (foreground / center), and depth of field separation.
 
