@@ -4,8 +4,14 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+const connectionString = process.env.DB_URL || process.env.DATABASE_URL;
+
+if (!connectionString) {
+  console.error('Database connection URL missing. Set DB_URL or DATABASE_URL in environment.');
+}
+
 const pool = new Pool({
-  connectionString: process.env.DB_URL,
+  connectionString,
   ssl: {
     rejectUnauthorized: false
   }

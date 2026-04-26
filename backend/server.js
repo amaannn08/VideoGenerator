@@ -11,8 +11,16 @@ import fetch from 'node-fetch';
 import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
 import { initDb, query } from './db.js';
-
+import { GoogleGenAI } from '@google/genai';
 dotenv.config();
+
+// Render deployment: decode base64 credentials to a temp file
+if (process.env.GOOGLE_CREDENTIALS_BASE64) {
+  const creds = Buffer.from(process.env.GOOGLE_CREDENTIALS_BASE64, 'base64').toString('utf-8');
+  const credsPath = '/tmp/credentials.json';
+  fs.writeFileSync(credsPath, creds);
+  process.env.GOOGLE_APPLICATION_CREDENTIALS = credsPath;
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,6 +47,13 @@ const openai = new OpenAI({
 });
 
 const GOOGLE_API_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+
+// Init Google GenAI SDK (Vertex AI mode — enables generateAudio, personGeneration, resolution)
+const genaiClient = new GoogleGenAI({
+  vertexai: true,
+  project: 'gen-lang-client-0653675781',
+  location: 'us-central1',
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -229,17 +244,20 @@ app.post('/api/image', async (req, res) => {
 
     parts.push({ text: imagePrompt + ' 9:16 aspect ratio' });
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ role: 'user', parts }],
-        generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-      }),
-    });
+    const data = await withRetry(async () => {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ role: 'user', parts }],
+          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+        }),
+      });
 
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error?.message || 'Gemini Image API failed');
+      const json = await response.json();
+      if (!response.ok) throw new Error(json.error?.message || 'Gemini Image API failed');
+      return json;
+    });
 
     const imageParts = data.candidates?.[0]?.content?.parts?.filter(p => p.inlineData || p.inline_data) || [];
     if (!imageParts.length) throw new Error('No image returned from Gemini');
@@ -259,134 +277,125 @@ app.post('/api/image', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. VIDEO GENERATION (Veo 3)
+// 4. VIDEO GENERATION (Veo 3.1 — @google/genai Vertex AI SDK)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateVideo(videoPrompt, imageUrl, duration) {
-  let imageBase64, imageMimeType;
-  if (imageUrl && imageUrl.startsWith('/tmp/')) {
-    const fileName = path.basename(imageUrl);
-    const localPath = path.join(TMP_DIR, fileName);
-    if (fs.existsSync(localPath)) {
-      imageBase64 = fs.readFileSync(localPath).toString('base64');
-      const ext = path.extname(fileName).slice(1) || 'jpeg';
-      imageMimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
-    }
-  } else if (imageUrl && imageUrl.startsWith('data:')) {
-    const commaIdx = imageUrl.indexOf(',');
-    const meta = imageUrl.slice(5, commaIdx);
-    imageMimeType = meta.split(';')[0];
-    imageBase64 = imageUrl.slice(commaIdx + 1);
-  }
+async function generateVeoVideo(prompt, imageUrl, duration) {
+  console.log(`[Veo3.1] Starting generation for prompt: "${prompt.slice(0, 80)}..."`);
 
-  const instanceData = { prompt: videoPrompt };
-  if (imageBase64) {
-    instanceData.image = { bytesBase64Encoded: imageBase64, mimeType: imageMimeType };
-  }
-
-  const durationSeconds = (() => {
-    const d = parseInt(duration);
-    if (isNaN(d)) return 8;
-    if (d <= 4) return 4;
-    if (d <= 6) return 6;
-    return 8;
-  })();
-
-  const initUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.VIDEO_MODEL}:predictLongRunning?key=${GOOGLE_API_KEY}`;
-
-  const initRes = await fetch(initUrl, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      instances: [instanceData],
-      parameters: {
-        aspectRatio: '9:16',
-        durationSeconds,
-        sampleCount: 1
+  // ── Parse Image Reference ───────────────────────────────────────────────
+  let imagePayload;
+  if (imageUrl) {
+    let imageBase64, imageMimeType;
+    if (imageUrl.startsWith('/tmp/')) {
+      const fileName = path.basename(imageUrl);
+      const localPath = path.join(TMP_DIR, fileName);
+      if (fs.existsSync(localPath)) {
+        imageBase64 = fs.readFileSync(localPath).toString('base64');
+        const ext = path.extname(fileName).slice(1) || 'jpeg';
+        imageMimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
       }
-    })
-  });
-
-  const initData = await initRes.json();
-  if (!initRes.ok) throw new Error(initData.error?.message || 'Veo 3 init failed');
-
-  const operationName = initData.name;
-  const pollUrl = `https://generativelanguage.googleapis.com/v1beta/${operationName}?key=${GOOGLE_API_KEY}`;
-
-  // Poll up to ~5 minutes
-  let videoUri = null;
-  let videoBase64 = null;
-  let videoMime = null;
-
-  // Recursively search any object for a video payload (URI or base64)
-  function findVideo(obj, depth = 0) {
-    if (!obj || typeof obj !== 'object' || depth > 10) return null;
-    // Any string URI field that looks like a video link
-    if (obj.uri && typeof obj.uri === 'string' && obj.uri.length > 10) return { uri: obj.uri };
-    // Base64 encoded video
-    if (obj.bytesBase64Encoded && typeof obj.bytesBase64Encoded === 'string') {
-      return { bytesBase64Encoded: obj.bytesBase64Encoded, mimeType: obj.mimeType || obj.encoding || 'video/mp4' };
+    } else if (imageUrl.startsWith('data:')) {
+      const commaIdx = imageUrl.indexOf(',');
+      const meta = imageUrl.slice(5, commaIdx);
+      imageMimeType = meta.split(';')[0];
+      imageBase64 = imageUrl.slice(commaIdx + 1);
     }
-    // Walk children
-    for (const val of Object.values(obj)) {
-      const found = Array.isArray(val)
-        ? val.map(item => findVideo(item, depth + 1)).find(Boolean)
-        : findVideo(val, depth + 1);
-      if (found) return found;
-    }
-    return null;
-  }
 
-  for (let i = 0; i < 60; i++) {
-    await new Promise(r => setTimeout(r, 5000));
-    const pollRes = await fetch(pollUrl);
-    if (!pollRes.ok) continue;
-    const pollData = await pollRes.json();
-
-    if (pollData.error) throw new Error(pollData.error.message);
-
-    if (pollData.done) {
-      const gvr = pollData.response?.generateVideoResponse;
-      // Log the FULL response so we can see the exact structure
-      console.log('[Veo3] FULL pollData.response:', JSON.stringify(pollData.response));
-      console.log('[Veo3] generateVideoResponse:', JSON.stringify(gvr));
-
-      // Check for content filtering / RAI rejection
-      const filtered = gvr?.raiMediaFilteredReasons || gvr?.filteredReasons;
-      if (filtered) throw new Error(`Veo 3 content filtered: ${JSON.stringify(filtered)}`);
-
-      // Try all known response paths — also search entire pollData not just .response
-      const video =
-        gvr?.generatedSamples?.[0]?.video ||
-        gvr?.generatedSamples?.[0] ||
-        gvr?.videos?.[0]?.video ||
-        gvr?.videos?.[0] ||
-        findVideo(gvr) ||
-        findVideo(pollData);   // last resort: entire response tree
-
-      if (!video) {
-        throw new Error(`Veo 3 returned done=true but no video found. Keys: ${JSON.stringify(Object.keys(pollData.response || {}))}`);
-      }
-
-      if (video.uri) videoUri = video.uri;
-      else if (video.bytesBase64Encoded) {
-        videoBase64 = video.bytesBase64Encoded;
-        videoMime = video.mimeType || 'video/mp4';
-      }
-      break;
+    if (imageBase64) {
+      imagePayload = {
+        imageBytes: imageBase64,
+        mimeType: imageMimeType,
+      };
+      console.log(`[Veo3.1] Using reference image (MIME: ${imageMimeType})`);
     }
   }
 
-  if (!videoUri && !videoBase64) throw new Error('Veo 3 timed out after 5 minutes');
+  // ── Parse Duration ──────────────────────────────────────────────────────
+  let durationSeconds = 8;
+  if (duration !== undefined) {
+    const parsed = parseInt(duration, 10);
+    if (!isNaN(parsed) && parsed > 0) {
+      durationSeconds = parsed;
+    }
+  }
 
-  const fileName = `video_${Date.now()}.mp4`;
+  // ── 1. Kick off the long-running operation ──────────────────────────────
+  const requestPayload = {
+    model: MODELS.VEO31_MODEL,
+    prompt,
+    config: {
+      aspectRatio:      '9:16',
+      numberOfVideos:   1,
+      durationSeconds:  durationSeconds,
+      personGeneration: 'allow_all',
+      generateAudio:    true,
+      resolution:       '720p',
+    },
+  };
+
+  if (imagePayload) {
+    requestPayload.image = imagePayload;
+  }
+
+  let operation = await genaiClient.models.generateVideos(requestPayload);
+
+  console.log(`[Veo3.1] Operation started: ${operation.name}`);
+
+  // ── 2. Poll until done ──────────────────────────────────────────────────
+  let attempts = 0;
+  const maxPollAttempts = 60;
+  const pollIntervalMs = 10_000;
+
+  while (!operation.done) {
+    if (attempts >= maxPollAttempts) {
+      throw new Error(
+        `[Veo3.1] Timed out after ${maxPollAttempts * pollIntervalMs / 1000}s — operation never completed.`
+      );
+    }
+
+    console.log(
+      `[Veo3.1] Waiting… attempt ${attempts + 1}/${maxPollAttempts} ` +
+      `(poll every ${pollIntervalMs / 1000}s)`
+    );
+
+    await new Promise(r => setTimeout(r, pollIntervalMs));
+    operation = await genaiClient.operations.get({ operation });
+    attempts++;
+  }
+
+  console.log('[Veo3.1] Operation complete. Extracting video…');
+
+  // ── 3. Check for errors / filtering ────────────────────────────────────
+  if (operation.error) {
+    throw new Error(`[Veo3.1] Operation failed: ${JSON.stringify(operation.error)}`);
+  }
+
+  const generatedVideos = operation.response?.generatedVideos;
+  if (!generatedVideos || generatedVideos.length === 0) {
+    throw new Error(
+      `[Veo3.1] No videos in response. Full response: ${JSON.stringify(operation.response)}`
+    );
+  }
+
+  // ── 4. Extract base64 and write to disk ─────────────────────────────────
+  const videoData = generatedVideos[0].video;
+  if (!videoData) {
+    throw new Error('[Veo3.1] generatedVideos[0].video is undefined.');
+  }
+
+  // Vertex AI returns video bytes under `videoBytes`
+  const b64 = videoData.videoBytes ?? videoData.bytesBase64Encoded;
+
+  if (typeof b64 !== 'string' || b64.length === 0) {
+    throw new Error(`[Veo3.1] Unexpected video payload. videoData keys: ${Object.keys(videoData).join(', ')}`);
+  }
+
+  const fileName  = `veo31_${Date.now()}.mp4`;
   const localPath = path.join(TMP_DIR, fileName);
 
-  if (videoUri) {
-    await downloadFile(videoUri, localPath);
-  } else {
-    fs.writeFileSync(localPath, Buffer.from(videoBase64, 'base64'));
-  }
+  fs.writeFileSync(localPath, Buffer.from(b64, 'base64'));
+  console.log(`[Veo3.1] Video saved to ${localPath}`);
 
   return `/tmp/${fileName}`;
 }
@@ -394,7 +403,8 @@ async function generateVideo(videoPrompt, imageUrl, duration) {
 app.post('/api/video', async (req, res) => {
   try {
     const { videoPrompt, imageUrl, duration } = req.body;
-    const videoUrl = await generateVideo(videoPrompt, imageUrl, duration);
+    if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
+    const videoUrl = await generateVeoVideo(videoPrompt, imageUrl, duration);
     res.json({ videoUrl });
   } catch (error) {
     console.error('Error in /api/video:', error);
@@ -628,7 +638,7 @@ app.post('/api/auto-run', async (req, res) => {
         sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'generating' });
         try {
           await withRetry(async () => {
-            const videoUrl = await generateVideo(
+            const videoUrl = await generateVeoVideo(
               sceneResults[i].videoPrompt,
               sceneResults[i].imageUrl,
               sceneResults[i].duration
