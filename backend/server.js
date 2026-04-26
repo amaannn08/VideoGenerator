@@ -100,6 +100,16 @@ function tmpFileToBase64(tmpUrl) {
   return fs.readFileSync(localPath).toString('base64');
 }
 
+function getErrorMessage(error) {
+  if (error?.message) return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return String(error);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. SCENE SPLITTING
 // ─────────────────────────────────────────────────────────────────────────────
@@ -686,7 +696,7 @@ app.post('/api/sessions', async (req, res) => {
     res.json({ sessionId });
   } catch (error) {
     console.error('Error creating session:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
@@ -696,7 +706,7 @@ app.get('/api/sessions', async (req, res) => {
     res.json({ sessions: result.rows });
   } catch (error) {
     console.error('Error fetching all sessions:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
@@ -720,7 +730,7 @@ app.get('/api/sessions/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching session:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
@@ -748,7 +758,7 @@ app.put('/api/sessions/:id', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating session:', error);
-    res.status(500).json({ error: error.message });
+    res.status(500).json({ error: getErrorMessage(error) });
   }
 });
 
