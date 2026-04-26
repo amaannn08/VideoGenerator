@@ -56,7 +56,7 @@ export default function App() {
         if (data.sessions) setAllSessions(data.sessions);
       })
       .catch(console.error);
-  }, []);
+  }, [sessionId, narrativeArc]);
 
   // Load session from DB
   useEffect(() => {
@@ -134,7 +134,7 @@ export default function App() {
     setAutoRunProgress({});
     setMergedVideo(null);
 
-    const body = JSON.stringify({ scenes, globalCharacter });
+    const body = JSON.stringify({ scenes, globalCharacter, sessionId });
     fetch(`${API}/api/auto-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
       .then(async (res) => {
         const reader = res.body.getReader();
@@ -235,6 +235,8 @@ export default function App() {
     if (doneCount.img === scenes.length) return 'image';
     return 'image_prompt';
   })();
+
+  const isPartiallyDone = scenes.some(s => s.status && s.status !== 'draft') && !allDone;
 
   if (isInitializing) {
     return (
@@ -348,7 +350,7 @@ export default function App() {
                   </Btn>
                 ) : (
                   <Btn onClick={handleAutoRun} variant="success" disabled={autoRunStage === 'done' && allDone} className="px-5 py-2.5 text-sm font-black">
-                    ▶ Auto-Generate All Scenes
+                    {isPartiallyDone ? '▶ Resume Generation' : '▶ Auto-Generate All Scenes'}
                   </Btn>
                 )}
               </div>

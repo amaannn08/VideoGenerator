@@ -6,5 +6,5 @@ export const MODELS = {
   IMAGE_MODEL: 'gemini-3.1-flash-image-preview',
 
   // Video Generation
-  VIDEO_MODEL: 'veo-3.0-fast-generate-001',
+  VIDEO_MODEL: 'veo-3.1-lite-generate-preview',
 };

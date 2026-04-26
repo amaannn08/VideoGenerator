@@ -444,7 +444,7 @@ app.post('/api/merge', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post('/api/auto-run', async (req, res) => {
-  const { scenes, globalCharacter } = req.body;
+  const { scenes, globalCharacter, sessionId } = req.body;
 
   if (!scenes || scenes.length === 0) {
     return res.status(400).json({ error: 'scenes array is required' });
@@ -471,139 +471,167 @@ app.post('/api/auto-run', async (req, res) => {
     // We need to track the accumulated scene data as we go
     const sceneResults = scenes.map(s => ({ ...s }));
 
+    const saveProgress = async () => {
+      if (!sessionId) return;
+      try {
+        await query('UPDATE sessions SET scenes = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2', [JSON.stringify(sceneResults), sessionId]);
+      } catch (err) {
+        console.error('Error saving progress to DB:', err);
+      }
+    };
+
     for (let i = 0; i < totalScenes; i++) {
       if (cancelled) break;
       const scene = sceneResults[i];
       const sceneId = scene.id;
 
       // ── Step 1: Image Prompt ──────────────────────────────────────────────
-      sendEvent({ type: 'scene_progress', sceneId, stage: 'image_prompt', status: 'generating' });
-
-      try {
-        await withRetry(async () => {
-          const prevScene = i > 0 ? sceneResults[i - 1] : null;
-          // Pass a textual description of the previous scene's image prompt (since DeepSeek is text-only)
-          const previousSceneImageDesc = prevScene?.imagePrompt
-            ? `Previous scene image showed: ${prevScene.imagePrompt.substring(0, 300)}...`
-            : null;
-
-          const promptText = SYSTEM_PROMPTS.getImagePromptGenerationPrompt(
-            scene, globalCharacter, previousSceneImageDesc, i, totalScenes
-          );
-
-          const completion = await openai.chat.completions.create({
-            messages: [{ role: 'user', content: promptText }],
-            model: MODELS.TEXT_MODEL,
+      if (sceneResults[i].imagePrompt && sceneResults[i].status !== 'draft' && sceneResults[i].status !== 'generating_image_prompt') {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'image_prompt', status: 'done', data: { imagePrompt: sceneResults[i].imagePrompt } });
+      } else {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'image_prompt', status: 'generating' });
+        try {
+          await withRetry(async () => {
+            const prevScene = i > 0 ? sceneResults[i - 1] : null;
+            const previousSceneImageDesc = prevScene?.imagePrompt
+              ? `Previous scene image showed: ${prevScene.imagePrompt.substring(0, 300)}...`
+              : null;
+  
+            const promptText = SYSTEM_PROMPTS.getImagePromptGenerationPrompt(
+              scene, globalCharacter, previousSceneImageDesc, i, totalScenes
+            );
+  
+            const completion = await openai.chat.completions.create({
+              messages: [{ role: 'user', content: promptText }],
+              model: MODELS.TEXT_MODEL,
+            });
+  
+            let data = extractJson(completion.choices[0].message.content);
+            if (!data) data = JSON.parse(completion.choices[0].message.content);
+  
+            sceneResults[i].imagePrompt = data.imagePrompt;
+            sceneResults[i].status = 'image_prompt_ready';
+            await saveProgress();
+            sendEvent({ type: 'scene_progress', sceneId, stage: 'image_prompt', status: 'done', data: { imagePrompt: data.imagePrompt } });
           });
-
-          let data = extractJson(completion.choices[0].message.content);
-          if (!data) data = JSON.parse(completion.choices[0].message.content);
-
-          sceneResults[i].imagePrompt = data.imagePrompt;
-          sendEvent({ type: 'scene_progress', sceneId, stage: 'image_prompt', status: 'done', data: { imagePrompt: data.imagePrompt } });
-        });
-      } catch (e) {
-        sendEvent({ type: 'error', sceneId, stage: 'image_prompt', message: `Failed after retries: ${e.message}` });
-        continue; // Skip to next scene
+        } catch (e) {
+          sendEvent({ type: 'error', sceneId, stage: 'image_prompt', message: `Failed after retries: ${e.message}` });
+          continue; // Skip to next scene
+        }
       }
 
       if (cancelled) break;
 
       // ── Step 2: Generate Image ────────────────────────────────────────────
-      sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'generating' });
-
-      try {
-        await withRetry(async () => {
-          const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.IMAGE_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
-          const parts = [];
-
-          // Pass previous scene's actual image for visual reference
-          const prevScene = i > 0 ? sceneResults[i - 1] : null;
-          if (prevScene?.imageUrl && prevScene.imageUrl.startsWith('/tmp/')) {
-            const base64Data = tmpFileToBase64(prevScene.imageUrl);
-            if (base64Data) {
-              parts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
-              parts.push({ text: 'Use the provided image as a strict visual reference for the character\'s face, skin tone, body build, clothing, and overall style. Maintain perfect visual continuity with this reference.' });
+      if (sceneResults[i].imageUrl) {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'done', data: { imageUrl: sceneResults[i].imageUrl } });
+      } else {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'generating' });
+        try {
+          await withRetry(async () => {
+            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.IMAGE_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
+            const parts = [];
+  
+            // Pass previous scene's actual image for visual reference
+            const prevScene = i > 0 ? sceneResults[i - 1] : null;
+            if (prevScene?.imageUrl && prevScene.imageUrl.startsWith('/tmp/')) {
+              const base64Data = tmpFileToBase64(prevScene.imageUrl);
+              if (base64Data) {
+                parts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
+                parts.push({ text: 'Use the provided image as a strict visual reference for the character\'s face, skin tone, body build, clothing, and overall style. Maintain perfect visual continuity with this reference.' });
+              }
             }
-          }
-
-          parts.push({ text: sceneResults[i].imagePrompt + ' 9:16 aspect ratio' });
-
-          const response = await fetch(geminiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ role: 'user', parts }],
-              generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-            }),
+  
+            parts.push({ text: sceneResults[i].imagePrompt + ' 9:16 aspect ratio' });
+  
+            const response = await fetch(geminiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ role: 'user', parts }],
+                generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
+              }),
+            });
+  
+            const gemData = await response.json();
+            if (!response.ok) throw new Error(gemData.error?.message || 'Gemini Image API failed');
+  
+            const imageParts = gemData.candidates?.[0]?.content?.parts?.filter(p => p.inlineData || p.inline_data) || [];
+            if (!imageParts.length) throw new Error('No image returned from Gemini');
+  
+            const inline = imageParts[0].inlineData || imageParts[0].inline_data;
+            const ext = (inline.mimeType || inline.mime_type || 'image/jpeg').split('/')[1] || 'jpeg';
+            const fileName = `image_${Date.now()}.${ext}`;
+            const localPath = path.join(TMP_DIR, fileName);
+            fs.writeFileSync(localPath, Buffer.from(inline.data, 'base64'));
+  
+            sceneResults[i].imageUrl = `/tmp/${fileName}`;
+            sceneResults[i].status = 'image_done';
+            await saveProgress();
+            sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'done', data: { imageUrl: `/tmp/${fileName}` } });
           });
-
-          const gemData = await response.json();
-          if (!response.ok) throw new Error(gemData.error?.message || 'Gemini Image API failed');
-
-          const imageParts = gemData.candidates?.[0]?.content?.parts?.filter(p => p.inlineData || p.inline_data) || [];
-          if (!imageParts.length) throw new Error('No image returned from Gemini');
-
-          const inline = imageParts[0].inlineData || imageParts[0].inline_data;
-          const ext = (inline.mimeType || inline.mime_type || 'image/jpeg').split('/')[1] || 'jpeg';
-          const fileName = `image_${Date.now()}.${ext}`;
-          const localPath = path.join(TMP_DIR, fileName);
-          fs.writeFileSync(localPath, Buffer.from(inline.data, 'base64'));
-
-          sceneResults[i].imageUrl = `/tmp/${fileName}`;
-          sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'done', data: { imageUrl: `/tmp/${fileName}` } });
-        });
-      } catch (e) {
-        sendEvent({ type: 'error', sceneId, stage: 'image', message: `Failed after retries: ${e.message}` });
-        continue;
+        } catch (e) {
+          sendEvent({ type: 'error', sceneId, stage: 'image', message: `Failed after retries: ${e.message}` });
+          continue;
+        }
       }
 
       if (cancelled) break;
 
       // ── Step 3: Video Prompt ──────────────────────────────────────────────
-      sendEvent({ type: 'scene_progress', sceneId, stage: 'video_prompt', status: 'generating' });
-
-      try {
-        await withRetry(async () => {
-          const promptText = SYSTEM_PROMPTS.getVideoPromptGenerationPrompt(
-            scene, globalCharacter, i, totalScenes
-          );
-
-          const completion = await openai.chat.completions.create({
-            messages: [{ role: 'user', content: promptText }],
-            model: MODELS.TEXT_MODEL,
+      if (sceneResults[i].videoPrompt && sceneResults[i].status !== 'image_done' && sceneResults[i].status !== 'generating_video_prompt') {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'video_prompt', status: 'done', data: { videoPrompt: sceneResults[i].videoPrompt, duration: sceneResults[i].duration } });
+      } else {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'video_prompt', status: 'generating' });
+        try {
+          await withRetry(async () => {
+            const promptText = SYSTEM_PROMPTS.getVideoPromptGenerationPrompt(
+              scene, globalCharacter, i, totalScenes
+            );
+  
+            const completion = await openai.chat.completions.create({
+              messages: [{ role: 'user', content: promptText }],
+              model: MODELS.TEXT_MODEL,
+            });
+  
+            let data = extractJson(completion.choices[0].message.content);
+            if (!data) data = JSON.parse(completion.choices[0].message.content);
+  
+            sceneResults[i].videoPrompt = data.videoPrompt;
+            sceneResults[i].duration = data.duration || scene.duration;
+            sceneResults[i].status = 'video_prompt_ready';
+            await saveProgress();
+            sendEvent({ type: 'scene_progress', sceneId, stage: 'video_prompt', status: 'done', data: { videoPrompt: data.videoPrompt, duration: data.duration } });
           });
-
-          let data = extractJson(completion.choices[0].message.content);
-          if (!data) data = JSON.parse(completion.choices[0].message.content);
-
-          sceneResults[i].videoPrompt = data.videoPrompt;
-          sceneResults[i].duration = data.duration || scene.duration;
-          sendEvent({ type: 'scene_progress', sceneId, stage: 'video_prompt', status: 'done', data: { videoPrompt: data.videoPrompt, duration: data.duration } });
-        });
-      } catch (e) {
-        sendEvent({ type: 'error', sceneId, stage: 'video_prompt', message: `Failed after retries: ${e.message}` });
-        continue;
+        } catch (e) {
+          sendEvent({ type: 'error', sceneId, stage: 'video_prompt', message: `Failed after retries: ${e.message}` });
+          continue;
+        }
       }
 
       if (cancelled) break;
 
       // ── Step 4: Generate Video ────────────────────────────────────────────
-      sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'generating' });
-
-      try {
-        await withRetry(async () => {
-          const videoUrl = await generateVideo(
-            sceneResults[i].videoPrompt,
-            sceneResults[i].imageUrl,
-            sceneResults[i].duration
-          );
-          sceneResults[i].videoUrl = videoUrl;
-          sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl } });
-        }, 3, 5000); // 3 retries, 5s delay between attempts
-      } catch (e) {
-        sendEvent({ type: 'error', sceneId, stage: 'video', message: `Failed after retries: ${e.message}` });
-        continue;
+      if (sceneResults[i].videoUrl) {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl: sceneResults[i].videoUrl } });
+      } else {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'generating' });
+        try {
+          await withRetry(async () => {
+            const videoUrl = await generateVideo(
+              sceneResults[i].videoPrompt,
+              sceneResults[i].imageUrl,
+              sceneResults[i].duration
+            );
+            sceneResults[i].videoUrl = videoUrl;
+            sceneResults[i].status = 'video_done';
+            await saveProgress();
+            sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl } });
+          }, 3, 5000); // 3 retries, 5s delay between attempts
+        } catch (e) {
+          sendEvent({ type: 'error', sceneId, stage: 'video', message: `Failed after retries: ${e.message}` });
+          continue;
+        }
       }
     }
 

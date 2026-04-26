@@ -24,9 +24,21 @@ export const initDb = async () => {
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `;
+  const migrationQueries = [
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS script TEXT;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS global_character TEXT;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS narrative_arc TEXT;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS scenes JSONB;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS merged_video TEXT;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
+  ];
   
   try {
     await pool.query(createTableQuery);
+    for (const migrationQuery of migrationQueries) {
+      await pool.query(migrationQuery);
+    }
     console.log('Database initialized: sessions table ready.');
   } catch (err) {
     console.error('Error initializing database:', err);
