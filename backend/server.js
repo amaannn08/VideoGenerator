@@ -157,6 +157,32 @@ app.post('/api/scenes', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+// 1b. SINGLE SCENE GENERATION FROM FREE-TEXT PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/scenes/generate-one', async (req, res) => {
+  try {
+    const { userPrompt, globalCharacter, sceneIndex = 0, totalScenes = 1 } = req.body;
+    if (!userPrompt) return res.status(400).json({ error: 'userPrompt is required' });
+
+    const promptText = SYSTEM_PROMPTS.getSceneFromPromptPrompt(userPrompt, globalCharacter, sceneIndex, totalScenes);
+
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: promptText }],
+      model: MODELS.TEXT_MODEL,
+    });
+
+    let data = extractJson(completion.choices[0].message.content);
+    if (!data) data = JSON.parse(completion.choices[0].message.content);
+
+    res.json({ scene: data });
+  } catch (error) {
+    console.error('Error in /api/scenes/generate-one:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 2a. IMAGE PROMPT GENERATION
 // ─────────────────────────────────────────────────────────────────────────────
 

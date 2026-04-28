@@ -30,7 +30,7 @@ function Modal({ isOpen, onClose, title, children }) {
 
 const STAGES = ['draft', 'generating_image_prompt', 'image_prompt_ready', 'image_generating', 'image_done', 'generating_video_prompt', 'video_prompt_ready', 'video_generating', 'video_done'];
 
-const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSceneImage, totalScenes, autoRunStage }) => {
+const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter }) => {
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
@@ -48,6 +48,8 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const [localDuration, setLocalDuration] = useState(scene.duration || 8);
   const [imgCustomInstruction, setImgCustomInstruction] = useState(scene.imgCustomInstruction || '');
   const [vidCustomInstruction, setVidCustomInstruction] = useState(scene.vidCustomInstruction || '');
+  const [scenePromptInput, setScenePromptInput] = useState('');
+  const [generatingScene, setGeneratingScene] = useState(false);
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
@@ -72,6 +74,26 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
     abort();
     const fallbacks = { generating_image_prompt: 'draft', image_generating: 'image_prompt_ready', generating_video_prompt: 'image_done', video_generating: 'video_prompt_ready' };
     if (fallbacks[status]) updateScene(scene.id, { status: fallbacks[status] });
+  };
+
+  const genSceneFromPrompt = async () => {
+    if (!scenePromptInput.trim()) return;
+    setGeneratingScene(true);
+    try {
+      const r = await fetch(`${API}/api/scenes/generate-one`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userPrompt: scenePromptInput, globalCharacter, sceneIndex: index, totalScenes }),
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      updateScene(scene.id, { ...d.scene, status: 'draft' });
+      setScenePromptInput('');
+    } catch (e) {
+      alert(`Failed to generate scene: ${e.message}`);
+    } finally {
+      setGeneratingScene(false);
+    }
   };
 
   const genImgPrompt = async () => {
@@ -129,7 +151,6 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   return (
     <>
       <div className={`bg-white rounded-2xl border shadow-sm flex flex-col overflow-hidden transition-all hover:shadow-md ${status === 'video_done' ? 'border-green-200' : isGenerating ? 'border-amber-200 shadow-amber-100' : 'border-gray-200'}`}>
-        {/* Header */}
         <div className="bg-gray-50 border-b border-gray-100 px-3 py-2 flex justify-between items-start gap-2">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
@@ -151,10 +172,26 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             </div>
             {scene.title && <p className="font-bold text-gray-800 text-sm mt-0.5 truncate">{scene.title}</p>}
           </div>
-          <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap flex items-center gap-1 ${statusColors[status] || 'bg-gray-100 text-gray-500'}`}>
-            {isGenerating && <Spinner size={10} color="border-current" />}
-            {statusLabels[status] || status}
-          </span>
+          <div className="flex items-center gap-1 shrink-0">
+            <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap flex items-center gap-1 ${statusColors[status] || 'bg-gray-100 text-gray-500'}`}>
+              {isGenerating && <Spinner size={10} color="border-current" />}
+              {statusLabels[status] || status}
+            </span>
+            <button
+              title="Add scene below"
+              onClick={onAddAfter}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700 font-black text-sm transition-colors"
+            >
+              ＋
+            </button>
+            <button
+              title="Delete scene"
+              onClick={() => { if (window.confirm(`Delete Scene ${index + 1}?`)) onDelete(); }}
+              className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 font-bold text-base transition-colors leading-none"
+            >
+              ×
+            </button>
+          </div>
         </div>
 
         <div className="p-3 flex-1 flex flex-col gap-2">
@@ -219,10 +256,31 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
           {/* Action buttons — only shown in manual mode */}
           {!isAutoActive && (
             <div className="mt-auto flex gap-2 flex-wrap">
-              {status === 'draft' && <Btn onClick={genImgPrompt} className="w-full text-xs">Generate Image Prompt</Btn>}
+              {status === 'draft' && !scene.summary && (
+                <div className="w-full space-y-2">
+                  <div className="text-[10px] font-black text-indigo-500 uppercase tracking-widest">✨ Generate Scene from Prompt</div>
+                  <textarea
+                    value={scenePromptInput}
+                    onChange={e => setScenePromptInput(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) genSceneFromPrompt(); }}
+                    rows={3}
+                    placeholder="Describe this scene… e.g. 'The king walks onto an empty battlefield at dawn, grief-stricken, dialogue: मैं हार गया'"
+                    className="w-full text-xs border border-indigo-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none resize-none bg-indigo-50/50 placeholder:text-gray-300"
+                  />
+                  <Btn
+                    onClick={genSceneFromPrompt}
+                    loading={generatingScene}
+                    disabled={!scenePromptInput.trim()}
+                    className="w-full text-xs"
+                  >
+                    {generatingScene ? 'Generating…' : '✨ Generate Scene'}
+                  </Btn>
+                </div>
+              )}
+              {status === 'draft' && scene.summary && <Btn onClick={genImgPrompt} className="w-full text-xs">Generate Image Prompt</Btn>}
               {status === 'generating_image_prompt' && <Btn onClick={handleStop} variant="danger" className="w-full text-xs"><Spinner size={12} color="border-white" />Stop</Btn>}
               {hasImgP && <Btn onClick={() => setImgModal(true)} variant={hasImg ? 'ghost' : 'primary'} className="flex-1 text-xs">🖼 {hasImg ? 'View Image' : 'Setup Image'}</Btn>}
-              {hasImg && <Btn onClick={() => setVidModal(true)} variant={hasVid ? 'ghost' : 'primary'} className="flex-1 text-xs">🎬 {hasVid ? 'View Video' : 'Setup Video'}</Btn>}
+              {hasImg && <Btn onClick={() => setVidModal(true)} variant={hasVid ? 'ghost' : 'primary'} className="flex-1 text-xs">🎦 {hasVid ? 'View Video' : 'Setup Video'}</Btn>}
             </div>
           )}
 

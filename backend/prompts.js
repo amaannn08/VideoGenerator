@@ -239,6 +239,48 @@ Output ONLY valid JSON. Nothing else.
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SINGLE SCENE GENERATOR FROM FREE-TEXT PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getSceneFromPromptPrompt(userPrompt, character, sceneIndex, totalScenes) {
+  return `You are a cinematic director. Given a brief description, produce ONE fully-detailed scene object in JSON for a 9:16 portrait short-form video pipeline.
+
+User description:
+"${userPrompt}"
+
+Context:
+- This is scene ${sceneIndex + 1} of ${totalScenes} in the project.
+- Global character anchor: ${character || 'Not yet defined — infer from the description.'}
+
+Rules:
+1. "duration" MUST be exactly 4, 6, or 8 (integer).
+2. "dialogue.text" — extract any spoken line from the description verbatim. If the dialogue is in Hindi/Hinglish write it in Devanagari script. If none, use empty string.
+3. "emotionalTone" must be granular and physical (e.g. "quiet devastation, jaw tight, eyes hollow").
+4. "location" must be vivid and atmospheric.
+5. "cameraWork" must be one of: "slow push-in", "static wide", "tracking shot from side-back angle", "extreme close-up static", "crane down", "handheld with tension shake".
+6. "dialogue.tone" must be one of: "commanding and calm", "heavy and burdened", "whisper-like and introspective", "broken and raw", "quiet and resolute", "calm and deliberate".
+7. Output ONLY valid JSON — no markdown fences, no explanation.
+
+{
+  "title": "Short cinematic title (4–6 words)",
+  "summary": "Vivid cinematic description of what physically happens — dense, atmospheric, no dialogue.",
+  "emotionalTone": "Granular emotional/physical state of the character.",
+  "location": "Immersive atmospheric setting with lighting and weather details.",
+  "timeOfDay": "e.g. golden hour dusk",
+  "duration": 8,
+  "dialogue": {
+    "text": "",
+    "language": "Hindi",
+    "tone": "calm and deliberate",
+    "pacing": "slow with natural pauses"
+  },
+  "cameraWork": "slow push-in",
+  "transitionFrom": "",
+  "transitionTo": ""
+}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // EXPORTS
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -246,4 +288,5 @@ export const SYSTEM_PROMPTS = {
   getSceneSplitPrompt,
   getImagePromptGenerationPrompt,
   getVideoPromptGenerationPrompt,
+  getSceneFromPromptPrompt,
 };

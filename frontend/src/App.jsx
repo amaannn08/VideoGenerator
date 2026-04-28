@@ -96,6 +96,29 @@ export default function App() {
     setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
   }, [setScenes]);
 
+  const deleteScene = useCallback((id) => {
+    setScenes(prev => prev.filter(s => s.id !== id));
+  }, [setScenes]);
+
+  const addScene = useCallback((afterIndex) => {
+    const newScene = {
+      id: Math.random().toString(36).substr(2, 9),
+      title: '',
+      summary: '',
+      location: '',
+      timeOfDay: '',
+      emotionalTone: '',
+      dialogue: { text: '', tone: 'calm and deliberate', pacing: 'slow with natural pauses', language: 'Hindi' },
+      duration: 8,
+      status: 'draft',
+    };
+    setScenes(prev => {
+      const next = [...prev];
+      next.splice(afterIndex + 1, 0, newScene);
+      return next;
+    });
+  }, [setScenes]);
+
   // ── Scene Split ───────────────────────────────────────────────────────────
   const handleSplitScript = async () => {
     if (!script.trim()) return;
@@ -375,8 +398,18 @@ export default function App() {
                   previousSceneImage={i > 0 ? (scenes[i-1].imageUrl || '') : ''}
                   totalScenes={scenes.length}
                   autoRunStage={autoRunStage}
+                  onDelete={() => deleteScene(scene.id)}
+                  onAddAfter={() => addScene(i)}
                 />
               ))}
+            </div>
+            <div className="flex justify-center mt-2">
+              <button
+                onClick={() => addScene(scenes.length - 1)}
+                className="flex items-center gap-2 text-sm font-bold text-indigo-600 border-2 border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50 px-6 py-3 rounded-2xl transition-all"
+              >
+                <span className="text-lg leading-none">＋</span> Add Scene
+              </button>
             </div>
           </section>
         )}
