@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Film, User, Lock, LogIn, Loader2 } from 'lucide-react';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 
@@ -36,7 +37,7 @@ export default function Login({ onLogin }) {
         {/* Logo / title */}
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-14 h-14 bg-indigo-600 rounded-2xl shadow-lg mb-4">
-            <span className="text-2xl">🎬</span>
+            <Film className="w-7 h-7 text-white" strokeWidth={1.5} />
           </div>
           <h1 className="text-2xl font-black text-gray-900 tracking-tight">Cinematic AI</h1>
           <p className="text-xs text-gray-400 uppercase tracking-widest mt-1">Reel Builder · Private Access</p>
@@ -51,30 +52,36 @@ export default function Login({ onLogin }) {
             <label className="text-xs font-black text-gray-500 uppercase tracking-widest block mb-1.5">
               Username
             </label>
-            <input
-              type="text"
-              autoComplete="username"
-              value={username}
-              onChange={e => setUsername(e.target.value)}
-              required
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              placeholder="Enter username"
-            />
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="text"
+                autoComplete="username"
+                value={username}
+                onChange={e => setUsername(e.target.value)}
+                required
+                className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                placeholder="Enter username"
+              />
+            </div>
           </div>
 
           <div>
             <label className="text-xs font-black text-gray-500 uppercase tracking-widest block mb-1.5">
               Password
             </label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              required
-              className="w-full border border-gray-200 rounded-xl px-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
-              placeholder="Enter password"
-            />
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                className="w-full border border-gray-200 rounded-xl pl-10 pr-4 py-3 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all"
+                placeholder="Enter password"
+              />
+            </div>
           </div>
 
           {error && (
@@ -90,10 +97,15 @@ export default function Login({ onLogin }) {
           >
             {loading ? (
               <>
-                <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Signing in…
               </>
-            ) : 'Sign In'}
+            ) : (
+              <>
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </>
+            )}
           </button>
         </form>
 

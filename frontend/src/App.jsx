@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Link2, RotateCcw, LogOut, Film, Play, Check, Download, Plus, ArrowRight } from 'lucide-react';
 import SceneCard from './components/SceneCard';
 import Login from './components/Login';
 
@@ -117,6 +118,10 @@ export default function App() {
 
   const updateScene = useCallback((id, updates) => {
     setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  }, [setScenes]);
+
+  const deleteScene = useCallback((id) => {
+    setScenes(prev => prev.filter(s => s.id !== id));
   }, [setScenes]);
 
   const addScene = useCallback((afterIndex) => {
@@ -352,11 +357,15 @@ export default function App() {
               }}
               className="text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-100 flex items-center gap-2"
             >
-              🔗 Copy Share Link
+              <Link2 className="w-4 h-4" /> Copy Share Link
             </button>
           )}
-          <button onClick={handleReset} className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2">🔄 Restart</button>
-          <button onClick={handleLogout} className="text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2">🚪 Logout</button>
+          <button onClick={handleReset} className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2">
+            <RotateCcw className="w-4 h-4" /> Restart
+          </button>
+          <button onClick={handleLogout} className="text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2">
+            <LogOut className="w-4 h-4" /> Logout
+          </button>
         </div>
       </header>
 
@@ -396,7 +405,7 @@ export default function App() {
         {/* Narrative Arc Banner */}
         {narrativeArc && (
           <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-2xl shadow-lg flex items-start gap-3">
-            <span className="text-2xl mt-0.5">🎬</span>
+            <Film className="w-6 h-6 mt-0.5" />
             <div>
               <div className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Narrative Arc</div>
               <p className="text-sm font-medium leading-relaxed">{narrativeArc}</p>
@@ -420,7 +429,7 @@ export default function App() {
                   </Btn>
                 ) : (
                   <Btn onClick={handleAutoRun} variant="success" disabled={autoRunStage === 'done' && allDone} className="px-5 py-2.5 text-sm font-black">
-                    {isPartiallyDone ? '▶ Resume Generation' : '▶ Auto-Generate All Scenes'}
+                    <Play className="w-4 h-4 fill-current" /> {isPartiallyDone ? 'Resume Generation' : 'Auto-Generate All Scenes'}
                   </Btn>
                 )}
               </div>
@@ -455,7 +464,7 @@ export default function App() {
                 onClick={() => addScene(scenes.length - 1)}
                 className="flex items-center gap-2 text-sm font-bold text-indigo-600 border-2 border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50 px-6 py-3 rounded-2xl transition-all"
               >
-                <span className="text-lg leading-none">＋</span> Add Scene
+                <Plus className="w-5 h-5" /> Add Scene
               </button>
             </div>
           </section>
@@ -478,9 +487,11 @@ export default function App() {
               ) : (
                 <div className="w-full flex flex-col items-center gap-4">
                   <video src={`${API}${mergedVideo}`} controls autoPlay className="w-full bg-black rounded-xl shadow-lg border border-gray-200" />
-                  <a href={`${API}${mergedVideo}`} download className="text-indigo-600 font-semibold hover:underline text-sm">⬇ Download MP4</a>
+                  <a href={`${API}${mergedVideo}`} download className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline text-sm">
+                    <Download className="w-4 h-4" /> Download MP4
+                  </a>
                   <Btn onClick={handleMerge} loading={merging} disabled={!allDone && !isRunning} variant="ghost" className="w-full mt-2">
-                    {merging ? 'Merging…' : '↻ Re-Merge & Export'}
+                    {merging ? 'Merging…' : <><RotateCcw className="w-4 h-4" /> Re-Merge & Export</>}
                   </Btn>
                 </div>
               )}
@@ -502,10 +513,10 @@ export default function App() {
               return (
                 <React.Fragment key={s.key}>
                   <div className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full transition-all ${done ? 'bg-green-100 text-green-700' : active ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
-                    {done ? '✓' : active && isRunning ? <Spinner size={10} color="border-indigo-600" /> : null}
+                    {done ? <Check className="w-3 h-3" strokeWidth={3} /> : active && isRunning ? <Spinner size={10} color="border-indigo-600" /> : null}
                     {s.label}
                   </div>
-                  {i < PIPELINE_STAGES.length - 1 && <span className={`text-[10px] font-black ${thisIdx < activeIdx ? 'text-green-500' : 'text-gray-300'}`}>→</span>}
+                  {i < PIPELINE_STAGES.length - 1 && <ArrowRight className={`w-3 h-3 ${thisIdx < activeIdx ? 'text-green-500' : 'text-gray-300'}`} />}
                 </React.Fragment>
               );
             })}
