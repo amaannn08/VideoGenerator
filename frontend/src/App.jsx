@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SceneCard from './components/SceneCard';
+import Login from './components/Login';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 
@@ -30,6 +31,33 @@ const PIPELINE_STAGES = [
 ];
 
 export default function App() {
+  // ── Auth ──────────────────────────────────────────────────────────────────
+  const [authToken, setAuthToken] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('ai-video-token');
+    const exp = parseInt(localStorage.getItem('ai-video-token-exp') || '0', 10);
+    if (!token || Date.now() > exp) {
+      localStorage.removeItem('ai-video-token');
+      localStorage.removeItem('ai-video-token-exp');
+      setAuthChecked(true);
+      return;
+    }
+    fetch(`${API}/api/auth/verify`, { headers: { 'x-auth-token': token } })
+      .then(r => r.json())
+      .then(d => {
+        if (d.valid) setAuthToken(token);
+        else {
+          localStorage.removeItem('ai-video-token');
+          localStorage.removeItem('ai-video-token-exp');
+        }
+      })
+      .catch(() => { if (Date.now() < exp) setAuthToken(token); })
+      .finally(() => setAuthChecked(true));
+  }, []);
+
+  // ── App state — ALL hooks declared before any early return ────────────────
   const [globalCharacter, setGlobalCharacter] = useLocalStorage('ai-video-character', '');
   const [narrativeArc, setNarrativeArc] = useLocalStorage('ai-video-arc', '');
   const [script, setScript] = useLocalStorage('ai-video-script', '');
@@ -39,26 +67,22 @@ export default function App() {
 
   const [loadingScenes, setLoadingScenes] = useState(false);
   const [merging, setMerging] = useState(false);
-  const [autoRunStage, setAutoRunStage] = useState('idle'); // idle | running | done | error
+  const [autoRunStage, setAutoRunStage] = useState('idle');
   const [autoRunCurrentScene, setAutoRunCurrentScene] = useState(null);
-  const [autoRunProgress, setAutoRunProgress] = useState({}); // { sceneId: { stage, status } }
+  const [autoRunProgress, setAutoRunProgress] = useState({});
   const sseRef = useRef(null);
 
   const [sessionId, setSessionId] = useState(() => new URLSearchParams(window.location.search).get('session'));
   const [isInitializing, setIsInitializing] = useState(!!sessionId);
   const [allSessions, setAllSessions] = useState([]);
 
-  // Fetch all sessions for dropdown
   useEffect(() => {
     fetch(`${API}/api/sessions`)
       .then(res => res.json())
-      .then(data => {
-        if (data.sessions) setAllSessions(data.sessions);
-      })
+      .then(data => { if (data.sessions) setAllSessions(data.sessions); })
       .catch(console.error);
   }, [sessionId, narrativeArc]);
 
-  // Load session from DB
   useEffect(() => {
     if (sessionId) {
       fetch(`${API}/api/sessions/${sessionId}`)
@@ -79,7 +103,6 @@ export default function App() {
     }
   }, [sessionId]);
 
-  // Auto-save to DB when state changes
   useEffect(() => {
     if (!sessionId || isInitializing) return;
     const timeout = setTimeout(() => {
@@ -94,10 +117,6 @@ export default function App() {
 
   const updateScene = useCallback((id, updates) => {
     setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
-  }, [setScenes]);
-
-  const deleteScene = useCallback((id) => {
-    setScenes(prev => prev.filter(s => s.id !== id));
   }, [setScenes]);
 
   const addScene = useCallback((afterIndex) => {
@@ -118,6 +137,33 @@ export default function App() {
       return next;
     });
   }, [setScenes]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('ai-video-token');
+    localStorage.removeItem('ai-video-token-exp');
+    setAuthToken(null);
+  };
+
+  // ── Early returns (after ALL hooks) ───────────────────────────────────────
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-[#f0f1f6] flex items-center justify-center flex-col gap-4">
+        <div style={{ width: 32, height: 32 }} className="rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
+        <p className="text-gray-500 font-semibold animate-pulse">Checking access…</p>
+      </div>
+    );
+  }
+
+  if (!authToken) return <Login onLogin={setAuthToken} />;
+
+  if (isInitializing) {
+    return (
+      <div className="min-h-screen bg-[#f0f1f6] flex items-center justify-center flex-col gap-4">
+        <Spinner size={32} color="border-indigo-600" />
+        <p className="text-gray-500 font-semibold animate-pulse">Loading Session...</p>
+      </div>
+    );
+  }
 
   // ── Scene Split ───────────────────────────────────────────────────────────
   const handleSplitScript = async () => {
@@ -299,17 +345,18 @@ export default function App() {
           </select>
 
           {sessionId && (
-            <button 
+            <button
               onClick={() => {
                 navigator.clipboard.writeText(window.location.href);
                 alert('Session link copied to clipboard!');
-              }} 
+              }}
               className="text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-100 flex items-center gap-2"
             >
               🔗 Copy Share Link
             </button>
           )}
           <button onClick={handleReset} className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2">🔄 Restart</button>
+          <button onClick={handleLogout} className="text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2">🚪 Logout</button>
         </div>
       </header>
 

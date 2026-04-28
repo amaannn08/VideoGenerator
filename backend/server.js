@@ -126,6 +126,45 @@ function getErrorMessage(error) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// AUTH
+// ─────────────────────────────────────────────────────────────────────────────
+
+const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const authTokens = new Map(); // token -> expiresAt
+
+function randomToken() {
+  return Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join('');
+}
+
+app.post('/api/auth/login', (req, res) => {
+  const { username, password } = req.body;
+  const validUser = process.env.APP_USERNAME;
+  const validPass = process.env.APP_PASSWORD;
+
+  if (!validUser || !validPass) {
+    return res.status(500).json({ error: 'Auth not configured on server' });
+  }
+
+  if (username !== validUser || password !== validPass) {
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
+
+  const token = randomToken();
+  authTokens.set(token, Date.now() + TOKEN_TTL_MS);
+  res.json({ token, expiresIn: TOKEN_TTL_MS });
+});
+
+app.get('/api/auth/verify', (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (!token || !authTokens.has(token)) return res.status(401).json({ valid: false });
+  if (Date.now() > authTokens.get(token)) {
+    authTokens.delete(token);
+    return res.status(401).json({ valid: false, reason: 'expired' });
+  }
+  res.json({ valid: true });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 1. SCENE SPLITTING
 // ─────────────────────────────────────────────────────────────────────────────
 
