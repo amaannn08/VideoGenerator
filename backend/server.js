@@ -367,6 +367,15 @@ async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos')
         const ext = path.extname(fileName).slice(1) || 'jpeg';
         imageMimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
       }
+    } else if (imageUrl.startsWith('http')) {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download reference image: ${response.status} ${response.statusText}`);
+      }
+      const mime = response.headers.get('content-type') || 'image/jpeg';
+      const arrayBuffer = await response.arrayBuffer();
+      imageBase64 = Buffer.from(arrayBuffer).toString('base64');
+      imageMimeType = mime.split(';')[0];
     } else if (imageUrl.startsWith('data:')) {
       const commaIdx = imageUrl.indexOf(',');
       const meta = imageUrl.slice(5, commaIdx);
@@ -639,10 +648,21 @@ app.post('/api/auto-run', async (req, res) => {
   
             // Pass previous scene's actual image for visual reference
             const prevScene = i > 0 ? sceneResults[i - 1] : null;
-            if (prevScene?.imageUrl && prevScene.imageUrl.startsWith('/tmp/')) {
-              const base64Data = tmpFileToBase64(prevScene.imageUrl);
+            if (prevScene?.imageUrl) {
+              let base64Data = null;
+              let mimeType = 'image/jpeg';
+              if (prevScene.imageUrl.startsWith('/tmp/')) {
+                base64Data = tmpFileToBase64(prevScene.imageUrl);
+              } else if (prevScene.imageUrl.startsWith('http')) {
+                const imageRes = await fetch(prevScene.imageUrl);
+                if (imageRes.ok) {
+                  const arrayBuffer = await imageRes.arrayBuffer();
+                  base64Data = Buffer.from(arrayBuffer).toString('base64');
+                  mimeType = (imageRes.headers.get('content-type') || 'image/jpeg').split(';')[0];
+                }
+              }
               if (base64Data) {
-                parts.push({ inlineData: { data: base64Data, mimeType: 'image/jpeg' } });
+                parts.push({ inlineData: { data: base64Data, mimeType } });
                 parts.push({ text: 'Use the provided image as a strict visual reference for the character\'s face, skin tone, body build, clothing, and overall style. Maintain perfect visual continuity with this reference.' });
               }
             }
