@@ -12,6 +12,7 @@ import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
 import { initDb, query } from './db.js';
 import { GoogleGenAI } from '@google/genai';
+import { uploadToS3 } from './s3.js';
 dotenv.config();
 
 // Render deployment: decode base64 credentials to a temp file
@@ -100,7 +101,7 @@ function extractJson(text) {
 }
 
 async function downloadFile(url, destPath) {
-  const fetchUrl = url.includes('?') ? `${url}&key=${GOOGLE_API_KEY}` : `${url}?key=${GOOGLE_API_KEY}`;
+  const fetchUrl = url.includes('generativelanguage') ? (url.includes('?') ? `${url}&key=${GOOGLE_API_KEY}` : `${url}?key=${GOOGLE_API_KEY}`) : url;
   const res = await fetch(fetchUrl);
   if (!res.ok) throw new Error(`Failed to fetch ${fetchUrl}: ${res.statusText}`);
   const fileStream = fs.createWriteStream(destPath);
@@ -339,7 +340,8 @@ app.post('/api/image', async (req, res) => {
     const localPath = path.join(TMP_DIR, fileName);
     fs.writeFileSync(localPath, Buffer.from(base64Data, 'base64'));
 
-    res.json({ imageUrl: `/tmp/${fileName}` });
+    const publicUrl = await uploadToS3(localPath, `image/${ext}`, 'images');
+    res.json({ imageUrl: publicUrl });
   } catch (error) {
     console.error('Error in /api/image:', error);
     res.status(500).json({ error: error.message });
@@ -350,7 +352,7 @@ app.post('/api/image', async (req, res) => {
 // 4. VIDEO GENERATION (Veo 3.1 — @google/genai Vertex AI SDK)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateVeoVideo(prompt, imageUrl, duration) {
+async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos') {
   console.log(`[Veo3.1] Starting generation for prompt: "${prompt.slice(0, 80)}..."`);
 
   // ── Parse Image Reference ───────────────────────────────────────────────
@@ -467,7 +469,8 @@ async function generateVeoVideo(prompt, imageUrl, duration) {
   fs.writeFileSync(localPath, Buffer.from(b64, 'base64'));
   console.log(`[Veo3.1] Video saved to ${localPath}`);
 
-  return `/tmp/${fileName}`;
+  const publicUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
+  return publicUrl;
 }
 
 app.post('/api/video', async (req, res) => {
@@ -486,11 +489,22 @@ app.post('/api/video', async (req, res) => {
 // 5. MERGE VIDEOS (FFmpeg)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function mergeVideos(videoUrls) {
-  const localPaths = videoUrls.map(url => {
-    if (url.startsWith('/tmp/')) return path.join(__dirname, url);
-    return path.join(__dirname, url);
-  });
+async function mergeVideos(videoUrls, s3Prefix = 'merged') {
+  const localPaths = [];
+  for (const url of videoUrls) {
+    if (url.startsWith('http')) {
+      const fileName = path.basename(new URL(url).pathname);
+      const localPath = path.join(TMP_DIR, fileName);
+      if (!fs.existsSync(localPath)) {
+        await downloadFile(url, localPath);
+      }
+      localPaths.push(localPath);
+    } else if (url.startsWith('/tmp/')) {
+      localPaths.push(path.join(__dirname, url));
+    } else {
+      localPaths.push(path.join(__dirname, url));
+    }
+  }
 
   const mergedFileName = `merged_${Date.now()}.mp4`;
   const mergedPath = path.join(TMP_DIR, mergedFileName);
@@ -514,7 +528,8 @@ async function mergeVideos(videoUrls) {
       });
   });
 
-  return `/tmp/${mergedFileName}`;
+  const publicUrl = await uploadToS3(mergedPath, 'video/mp4', s3Prefix);
+  return publicUrl;
 }
 
 app.post('/api/merge', async (req, res) => {
@@ -655,10 +670,11 @@ app.post('/api/auto-run', async (req, res) => {
             const localPath = path.join(TMP_DIR, fileName);
             fs.writeFileSync(localPath, Buffer.from(inline.data, 'base64'));
   
-            sceneResults[i].imageUrl = `/tmp/${fileName}`;
+            const s3Url = await uploadToS3(localPath, `image/${ext}`, `sessions/${sessionId || 'temp'}/images`);
+            sceneResults[i].imageUrl = s3Url;
             sceneResults[i].status = 'image_done';
             await saveProgress();
-            sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'done', data: { imageUrl: `/tmp/${fileName}` } });
+            sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'done', data: { imageUrl: s3Url } });
           });
         } catch (e) {
           sendEvent({ type: 'error', sceneId, stage: 'image', message: `Failed after retries: ${e.message}` });
@@ -711,7 +727,8 @@ app.post('/api/auto-run', async (req, res) => {
             const videoUrl = await generateVeoVideo(
               sceneResults[i].videoPrompt,
               sceneResults[i].imageUrl,
-              sceneResults[i].duration
+              sceneResults[i].duration,
+              `sessions/${sessionId || 'temp'}/videos`
             );
             sceneResults[i].videoUrl = videoUrl;
             sceneResults[i].status = 'video_done';
@@ -745,7 +762,7 @@ app.post('/api/auto-run', async (req, res) => {
     sendEvent({ type: 'merge', status: 'merging' });
 
     try {
-      const mergedVideoUrl = await mergeVideos(completedVideoUrls);
+      const mergedVideoUrl = await mergeVideos(completedVideoUrls, `sessions/${sessionId || 'temp'}/merged`);
       sendEvent({ type: 'pipeline_complete', data: { mergedVideoUrl, sceneResults } });
     } catch (e) {
       sendEvent({ type: 'error', stage: 'merge', message: e.message });
