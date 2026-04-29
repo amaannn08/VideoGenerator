@@ -37,4 +37,5 @@ jobs:
               fi
               sleep 5
             done
-            curl -f https://videogenapi.amannngupta.online/api/auth/verify || exit 1
+            # Use local health check to avoid DNS propagation issues.
+            curl -f http://127.0.0.1:3000/api/auth/verify || exit 1
