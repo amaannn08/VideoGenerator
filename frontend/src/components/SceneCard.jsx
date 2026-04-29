@@ -2,6 +2,7 @@ import React, { useState, useEffect, memo, useRef } from 'react';
 import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile } from 'lucide-react';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
 function Spinner({ size = 14, color = 'border-indigo-600' }) {
   return <div style={{ width: size, height: size }} className={`rounded-full border-2 ${color} border-t-transparent animate-spin flex-shrink-0`} />;
@@ -384,7 +385,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
               <div className="flex-1 flex flex-col min-h-0">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block text-center">Storyboard Frame</label>
                 <div className="bg-white rounded-3xl p-4 flex justify-center relative shadow-2xl border border-gray-100 flex-1 min-h-0">
-                  <img src={`${API}${scene.imageUrl}`} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
+                  <img src={getMediaUrl(scene.imageUrl)} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
                   <button onClick={genImage} disabled={isGenerating} className="absolute bottom-6 right-6 bg-white/95 text-xs px-4 py-2 rounded-full shadow-xl font-black text-gray-800 hover:scale-110 transition-transform flex items-center gap-2"><RefreshCw className="w-3 h-3" /> Re-Render</button>
                 </div>
               </div>
@@ -476,7 +477,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             </div>
             {scene.imageUrl && !hasVid && (
               <div className="flex-1 flex flex-col bg-white border-2 border-gray-50 rounded-3xl p-4 items-center justify-center shadow-sm min-h-0">
-                <img src={`${API}${scene.imageUrl}`} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
+                <img src={getMediaUrl(scene.imageUrl)} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
                 <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Master Frame</div>
               </div>
             )}
@@ -484,7 +485,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             <div className="flex-1 flex flex-col min-h-0 min-w-0 space-y-2">
               <label className="text-xs font-black text-gray-400 uppercase tracking-widest block text-center">Final Video Render</label>
               <div className="bg-black rounded-3xl overflow-hidden shadow-2xl border-8 border-gray-900 flex-1 min-h-0">
-                <video src={`${API}${scene.videoUrl}`} controls autoPlay loop className="w-full h-full object-contain" />
+                <video src={getMediaUrl(scene.videoUrl)} controls autoPlay loop className="w-full h-full object-contain" />
               </div>
             </div>
           )}

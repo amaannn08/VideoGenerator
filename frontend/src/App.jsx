@@ -4,6 +4,7 @@ import SceneCard from './components/SceneCard';
 import Login from './components/Login';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
 function Spinner({ size = 14, color = 'border-indigo-600' }) {
   return <div style={{ width: size, height: size }} className={`rounded-full border-2 ${color} border-t-transparent animate-spin flex-shrink-0`} />;
@@ -105,14 +106,42 @@ export default function App() {
   }, [sessionId]);
 
   useEffect(() => {
-    if (!sessionId || isInitializing) return;
-    const timeout = setTimeout(() => {
-      fetch(`${API}/api/sessions/${sessionId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo })
-      }).catch(console.error);
-    }, 2000);
+    if (isInitializing) return;
+    
+    // Check if there is any data worth saving
+    const hasData = script.trim() || globalCharacter.trim() || narrativeArc.trim() || scenes.length > 0;
+    if (!hasData) return;
+
+    const timeout = setTimeout(async () => {
+      try {
+        if (!sessionId) {
+          const res = await fetch(`${API}/api/sessions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo })
+          });
+          const data = await res.json();
+          if (data.sessionId) {
+            setSessionId(data.sessionId);
+            window.history.replaceState({}, '', '?session=' + data.sessionId);
+            // Refresh session list
+            fetch(`${API}/api/sessions`)
+              .then(res => res.json())
+              .then(d => { if (d.sessions) setAllSessions(d.sessions); })
+              .catch(console.error);
+          }
+        } else {
+          await fetch(`${API}/api/sessions/${sessionId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo })
+          });
+        }
+      } catch (err) {
+        console.error('Auto-save error:', err);
+      }
+    }, 1500);
+
     return () => clearTimeout(timeout);
   }, [script, globalCharacter, narrativeArc, scenes, mergedVideo, sessionId, isInitializing]);
 
@@ -289,7 +318,7 @@ export default function App() {
   };
 
   const handleReset = () => {
-    if (!window.confirm('Clear everything and restart?')) return;
+    if (!window.confirm('Start a new session? Your current progress will be lost if not saved.')) return;
     handleStopAutoRun();
     setScript(''); setScenes([]); setGlobalCharacter(''); setNarrativeArc(''); setMergedVideo(null);
     window.localStorage.clear();
@@ -330,18 +359,25 @@ export default function App() {
           <p className="text-[11px] text-gray-400 uppercase tracking-widest mt-0.5">DeepSeek · Gemini · Veo 3</p>
         </div>
         <div className="flex items-center gap-3">
+          <button 
+            onClick={handleReset} 
+            className="text-xs font-bold bg-indigo-600 text-white border border-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm"
+          >
+            <Plus className="w-4 h-4" /> New Session
+          </button>
+          
           <select 
             value={sessionId || ''} 
             onChange={(e) => {
               if (e.target.value) {
                 window.location.href = '?session=' + e.target.value;
               } else {
-                window.location.href = window.location.pathname;
+                handleReset();
               }
             }}
             className="text-xs font-bold bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-lg hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px] sm:max-w-[300px] truncate cursor-pointer"
           >
-            <option value="">+ New Session</option>
+            <option value="" disabled>Select Session</option>
             {allSessions.map(s => (
               <option key={s.id} value={s.id}>
                 {s.narrative_arc ? s.narrative_arc.substring(0, 50) + (s.narrative_arc.length > 50 ? '...' : '') : `Session ${s.id}`}
@@ -360,9 +396,6 @@ export default function App() {
               <Link2 className="w-4 h-4" /> Copy Share Link
             </button>
           )}
-          <button onClick={handleReset} className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2">
-            <RotateCcw className="w-4 h-4" /> Restart
-          </button>
           <button onClick={handleLogout} className="text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2">
             <LogOut className="w-4 h-4" /> Logout
           </button>
@@ -486,8 +519,8 @@ export default function App() {
                 </Btn>
               ) : (
                 <div className="w-full flex flex-col items-center gap-4">
-                  <video src={`${API}${mergedVideo}`} controls autoPlay className="w-full bg-black rounded-xl shadow-lg border border-gray-200" />
-                  <a href={`${API}${mergedVideo}`} download className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline text-sm">
+                  <video src={getMediaUrl(mergedVideo)} controls autoPlay className="w-full bg-black rounded-xl shadow-lg border border-gray-200" />
+                  <a href={getMediaUrl(mergedVideo)} download className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline text-sm">
                     <Download className="w-4 h-4" /> Download MP4
                   </a>
                   <Btn onClick={handleMerge} loading={merging} disabled={!allDone && !isRunning} variant="ghost" className="w-full mt-2">
