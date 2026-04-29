@@ -24,6 +24,10 @@ jobs:
             git pull --ff-only origin main
             cd backend
             npm ci
-            pm2 restart ai-video-backend
+            if pm2 describe ai-video-backend > /dev/null 2>&1; then
+              pm2 restart ai-video-backend --update-env
+            else
+              pm2 start server.js --name ai-video-backend
+            fi
             pm2 save
             curl -f https://videogenapi.amannngupta.online/api/auth/verify || exit 1
