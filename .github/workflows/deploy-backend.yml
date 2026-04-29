@@ -31,11 +31,13 @@ jobs:
             fi
             pm2 save
             # Give app/Nginx a moment to become healthy after restart.
+            ok=0
             for i in 1 2 3 4 5 6; do
-              if curl -fsS http://127.0.0.1:3000/api/auth/verify > /dev/null; then
+              code="$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:3000/api/auth/verify || true)"
+              if [ "$code" = "200" ] || [ "$code" = "401" ]; then
+                ok=1
                 break
               fi
               sleep 5
             done
-            # Use local health check to avoid DNS propagation issues.
-            curl -f http://127.0.0.1:3000/api/auth/verify || exit 1
+            [ "$ok" -eq 1 ] || (echo "Backend failed health check" && exit 1)
