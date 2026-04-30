@@ -271,7 +271,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
 
   return (
     <>
-      <div style={{ background:'var(--bg-surface)', border:cardBorder, borderRadius:14, boxShadow:cardGlow, display:'flex', flexDirection:'column', overflow:'hidden', transition:'box-shadow 0.2s' }}>
+      <div style={{ background:'var(--bg-surface)', border:cardBorder, borderRadius:14, boxShadow:cardGlow, display:'flex', flexDirection:'column', overflow:'hidden', transition:'box-shadow 0.2s', height:'100%' }}>
         <div style={{ background:'var(--bg-raised)', borderBottom:'1px solid var(--border-subtle)', padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
@@ -293,9 +293,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         </div>
 
         <div style={{ padding:'12px 14px', flex:1, display:'flex', flexDirection:'column', gap:10 }}>
-          <button type="button" onClick={() => setScriptModal(true)} style={{ textAlign:'left', background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'10px 12px', cursor:'pointer', transition:'border-color 0.15s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--border-strong)'} onMouseOut={e=>e.currentTarget.style.borderColor='var(--border-subtle)'}>
-            <p style={{ fontSize:12, color:'var(--text-secondary)', lineHeight:1.55, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{scene.summary || <span style={{color:'var(--text-muted)'}}>No summary — click to edit</span>}</p>
-            <p style={{ fontSize:11, color:'var(--text-muted)', marginTop:5, display:'flex', alignItems:'center', gap:4 }}><MapPin size={10} /> {scene.location} {scene.timeOfDay ? '· '+scene.timeOfDay : ''}</p>
+          <button type="button" onClick={() => setScriptModal(true)} style={{ textAlign:'left', background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'10px 12px', cursor:'pointer', transition:'border-color 0.15s', flexShrink:0, height:80, overflow:'hidden' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--border-strong)'} onMouseOut={e=>e.currentTarget.style.borderColor='var(--border-subtle)'}>
+            <p style={{ fontSize:12, color:'var(--text-secondary)', lineHeight:1.5, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', marginBottom:4 }}>{scene.summary || <span style={{color:'var(--text-muted)'}}>No summary — click to edit</span>}</p>
+            <p style={{ fontSize:11, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}><MapPin size={10} /> {scene.location}{scene.timeOfDay ? ' · '+scene.timeOfDay : ''}</p>
           </button>
 
           <details style={{ background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'8px 12px' }} open>

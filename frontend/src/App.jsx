@@ -84,6 +84,9 @@ export default function App() {
   const [isInitializing, setIsInitializing]           = useState(!!new URLSearchParams(window.location.search).get('session'));
   const [allSessions, setAllSessions]                 = useState([]);
   const [activeTab, setActiveTab]                     = useState('script');
+  const [activeSceneId, setActiveSceneId]             = useState(null);
+
+  const handleTabChange = (tab) => { setActiveTab(tab); if (tab !== 'scenes') setActiveSceneId(null); };
 
   // ── Legacy character migration ─────────────────────────────────────────
   useEffect(() => {
@@ -443,12 +446,10 @@ export default function App() {
             autoRunCurrentScene={autoRunCurrentScene}
             onAutoRun={handleAutoRun}
             onStopAutoRun={handleStopAutoRun}
-            onMerge={handleMerge}
-            mergedVideo={mergedVideo}
-            setMergedVideo={setMergedVideo}
-            merging={merging}
             refreshMediaUrl={refreshMediaUrl}
             narrativeArc={narrativeArc}
+            activeSceneId={activeSceneId}
+            onSceneSelect={setActiveSceneId}
           />
         );
     }
@@ -468,8 +469,11 @@ export default function App() {
           sessions={allSessions}
           sessionId={sessionId}
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           onSessionSelect={sessionSelectHandler}
+          scenes={scenes}
+          activeSceneId={activeSceneId}
+          onSceneSelect={setActiveSceneId}
         />
 
         <main className="main-content">
