@@ -5,7 +5,7 @@ import path from 'path';
 
 const REGION = process.env.AWS_REGION || 'eu-north-1';
 const BUCKET_NAME = process.env.S3_BUCKET_NAME || 'videogen-media-amannngupta-eun1';
-const PRESIGNED_TTL_SECONDS = Number(process.env.S3_PRESIGNED_TTL_SECONDS || 3600);
+const PRESIGNED_TTL_SECONDS = Number(process.env.S3_PRESIGNED_TTL_SECONDS || 604800); // 7 days
 
 // IAM Role attached to EC2 handles auth automatically
 const s3Client = new S3Client({ region: REGION });

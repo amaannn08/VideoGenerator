@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link2, RotateCcw, LogOut, Film, Play, Check, Download, Plus, ArrowRight, Trash2 } from 'lucide-react';
 import SceneCard from './components/SceneCard';
+import CharacterPanel from './components/CharacterPanel';
+import EnvironmentsPanel from './components/EnvironmentsPanel';
 import Login from './components/Login';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
@@ -60,7 +62,9 @@ export default function App() {
   }, []);
 
   // ── App state — ALL hooks declared before any early return ────────────────
-  const [globalCharacter, setGlobalCharacter] = useLocalStorage('ai-video-character', '');
+  const [globalCharacter, setGlobalCharacter] = useLocalStorage('ai-video-character', { name: '', description: '', keyFeature: '', referenceImageUrl: null });
+  const [globalEnvironments, setGlobalEnvironments] = useLocalStorage('ai-video-environments', []);
+  const [targetLanguage, setTargetLanguage] = useLocalStorage('ai-video-lang', 'Hindi');
   const [narrativeArc, setNarrativeArc] = useLocalStorage('ai-video-arc', '');
   const [script, setScript] = useLocalStorage('ai-video-script', '');
   const [sceneCount, setSceneCount] = useLocalStorage('ai-video-scenecount', 3);
@@ -149,7 +153,15 @@ export default function App() {
           if (!data.error) {
             const hydrated = await refreshSessionMediaUrls(data);
             setScript(hydrated.script || '');
-            setGlobalCharacter(hydrated.globalCharacter || '');
+            // Backward compat: if globalCharacter is a plain string, wrap it
+            const gc = hydrated.globalCharacter;
+            setGlobalCharacter(
+              typeof gc === 'object' && gc !== null ? gc
+              : typeof gc === 'string' && gc ? { name: '', description: gc, keyFeature: '', referenceImageUrl: null }
+              : { name: '', description: '', keyFeature: '', referenceImageUrl: null }
+            );
+            setGlobalEnvironments(hydrated.globalEnvironments || []);
+            setTargetLanguage(hydrated.targetLanguage || 'Hindi');
             setNarrativeArc(hydrated.narrativeArc || '');
             setScenes(hydrated.scenes || []);
             setMergedVideo(hydrated.mergedVideo || null);
@@ -166,7 +178,8 @@ export default function App() {
     if (isInitializing) return;
     
     // Check if there is any data worth saving
-    const hasData = script.trim() || globalCharacter.trim() || narrativeArc.trim() || scenes.length > 0;
+    const charDescription = typeof globalCharacter === 'object' ? globalCharacter.description : globalCharacter;
+    const hasData = script.trim() || charDescription?.trim() || narrativeArc.trim() || scenes.length > 0;
     if (!hasData) return;
 
     const timeout = setTimeout(async () => {
@@ -175,7 +188,7 @@ export default function App() {
           const res = await fetch(`${API}/api/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo })
+            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
           });
           const data = await res.json();
           if (data.sessionId) {
@@ -191,7 +204,7 @@ export default function App() {
           await fetch(`${API}/api/sessions/${sessionId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo })
+            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
           });
         }
       } catch (err) {
@@ -320,7 +333,7 @@ export default function App() {
     setAutoRunProgress({});
     setMergedVideo(null);
 
-    const body = JSON.stringify({ scenes, globalCharacter, sessionId });
+    const body = JSON.stringify({ scenes, globalCharacter, globalEnvironments, targetLanguage, sessionId });
     fetch(`${API}/api/auto-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
       .then(async (res) => {
         const reader = res.body.getReader();
@@ -390,7 +403,10 @@ export default function App() {
   const handleMerge = async () => {
     setMerging(true);
     try {
-      const videoUrls = scenes.map(s => s.videoUrl).filter(Boolean);
+      const videoUrls = scenes.map(s => {
+        const finalGen = s.videoGenerations?.find(g => g.isFinal);
+        return finalGen?.videoUrl || s.videoUrl;
+      }).filter(Boolean);
       if (!videoUrls.length) throw new Error('No videos to merge');
       const r = await fetch(`${API}/api/merge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoUrls }) });
       const d = await r.json();
@@ -508,7 +524,7 @@ export default function App() {
             className="w-full border border-gray-200 rounded-xl p-4 min-h-[160px] focus:outline-none focus:border-indigo-500 font-mono text-sm leading-relaxed resize-none"
           />
           <div className="mt-4 flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 gap-4">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <label className="text-sm font-bold text-gray-700">Scenes:</label>
               <input
                 type="number"
@@ -521,10 +537,36 @@ export default function App() {
               <span className="text-sm text-gray-500 font-medium">
                 {sceneCount === 0 ? 'Auto (Let AI decide)' : `scene${sceneCount !== 1 ? 's' : ''}`}
               </span>
+              <div className="flex items-center gap-2 ml-2">
+                <label className="text-sm font-bold text-gray-700">Dialogue Language:</label>
+                <select
+                  value={targetLanguage}
+                  onChange={e => setTargetLanguage(e.target.value)}
+                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
+                >
+                  {['Hindi','English','Tamil','Telugu','Bengali','Marathi','Punjabi','Urdu','Gujarati','Kannada','Malayalam'].map(l => (
+                    <option key={l}>{l}</option>
+                  ))}
+                </select>
+              </div>
             </div>
             <Btn onClick={handleSplitScript} loading={loadingScenes}>Split into Scenes</Btn>
           </div>
         </section>
+
+        {/* Character + Environments Panels */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <CharacterPanel
+            character={globalCharacter}
+            onUpdate={setGlobalCharacter}
+            script={script}
+          />
+          <EnvironmentsPanel
+            environments={globalEnvironments}
+            onUpdate={setGlobalEnvironments}
+            script={script}
+          />
+        </div>
 
         {/* Narrative Arc Banner */}
         {narrativeArc && (
@@ -575,6 +617,8 @@ export default function App() {
                   index={i}
                   updateScene={updateScene}
                   globalCharacter={globalCharacter}
+                  globalEnvironments={globalEnvironments}
+                  targetLanguage={targetLanguage}
                   previousSceneImage={i > 0 ? (scenes[i-1].imageUrl || '') : ''}
                   totalScenes={scenes.length}
                   autoRunStage={autoRunStage}

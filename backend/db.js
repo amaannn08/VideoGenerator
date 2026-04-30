@@ -38,6 +38,8 @@ export const initDb = async () => {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS merged_video TEXT;`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS global_environments JSONB;`,
+    `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS target_language TEXT DEFAULT 'Hindi';`,
   ];
   
   try {

@@ -12,6 +12,19 @@ import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
 import { initDb, query } from './db.js';
 import { GoogleGenAI } from '@google/genai';
+import { GoogleAuth } from 'google-auth-library';
+
+// Google Auth client for Translation API + Vertex AI
+const googleAuth = new GoogleAuth({
+  scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+});
+
+// Language code map for Google Translate
+const LANG_CODES = {
+  Hindi: 'hi', English: 'en', Tamil: 'ta', Telugu: 'te',
+  Bengali: 'bn', Marathi: 'mr', Punjabi: 'pa', Urdu: 'ur',
+  Gujarati: 'gu', Kannada: 'kn', Malayalam: 'ml', Sanskrit: 'sa',
+};
 import { uploadToS3, extractS3KeyFromUrl, getPresignedReadUrlForKey } from './s3.js';
 dotenv.config();
 
@@ -231,13 +244,127 @@ app.post('/api/scenes/generate-one', async (req, res) => {
 // 2a. IMAGE PROMPT GENERATION
 // ─────────────────────────────────────────────────────────────────────────────
 
+// ─────────────────────────────────────────────────────────────────────────────
+// 1b. SINGLE SCENE GENERATION FROM FREE-TEXT PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/scenes/generate-one', async (req, res) => {
+  try {
+    const { userPrompt, globalCharacter, sceneIndex = 0, totalScenes = 1 } = req.body;
+    if (!userPrompt) return res.status(400).json({ error: 'userPrompt is required' });
+
+    const promptText = SYSTEM_PROMPTS.getSceneFromPromptPrompt(userPrompt, globalCharacter, sceneIndex, totalScenes);
+
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: promptText }],
+      model: MODELS.TEXT_MODEL,
+    });
+
+    let data = extractJson(completion.choices[0].message.content);
+    if (!data) data = JSON.parse(completion.choices[0].message.content);
+
+    res.json({ scene: data });
+  } catch (error) {
+    console.error('Error in /api/scenes/generate-one:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTRACT CHARACTER FROM SCRIPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/extract/character', async (req, res) => {
+  try {
+    const { script } = req.body;
+    if (!script) return res.status(400).json({ error: 'script is required' });
+
+    const promptText = SYSTEM_PROMPTS.getCharacterExtractPrompt(script);
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: promptText }],
+      model: MODELS.TEXT_MODEL,
+    });
+
+    let data = extractJson(completion.choices[0].message.content);
+    if (!data) data = JSON.parse(completion.choices[0].message.content);
+    res.json({ character: data });
+  } catch (error) {
+    console.error('Error in /api/extract/character:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EXTRACT ENVIRONMENTS FROM SCRIPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/extract/environments', async (req, res) => {
+  try {
+    const { script } = req.body;
+    if (!script) return res.status(400).json({ error: 'script is required' });
+
+    const promptText = SYSTEM_PROMPTS.getEnvironmentExtractPrompt(script);
+    const completion = await openai.chat.completions.create({
+      messages: [{ role: 'user', content: promptText }],
+      model: MODELS.TEXT_MODEL,
+    });
+
+    let data = extractJson(completion.choices[0].message.content);
+    if (!data) data = JSON.parse(completion.choices[0].message.content);
+    res.json({ environments: data.environments || [] });
+  } catch (error) {
+    console.error('Error in /api/extract/environments:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TRANSLATE DIALOGUE (Google Cloud Translation API v2)
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/translate', async (req, res) => {
+  try {
+    const { text, targetLanguage } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+    if (!targetLanguage) return res.json({ translatedText: text });
+
+    const langCode = LANG_CODES[targetLanguage] || targetLanguage.toLowerCase().slice(0, 2);
+
+    const client = await googleAuth.getClient();
+    const token = await client.getAccessToken();
+
+    const response = await fetch('https://translation.googleapis.com/language/translate/v2', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ q: text, target: langCode, format: 'text' }),
+    });
+
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error?.message || 'Translation API failed');
+
+    const translatedText = result.data?.translations?.[0]?.translatedText || text;
+    res.json({ translatedText });
+  } catch (error) {
+    console.error('Error in /api/translate:', error);
+    // Fallback: return original text so pipeline doesn't break
+    res.json({ translatedText: req.body.text, warning: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 2a. IMAGE PROMPT GENERATION
+// ─────────────────────────────────────────────────────────────────────────────
+
 app.post('/api/prompts/image', async (req, res) => {
   try {
-    const { scene, character, previousSceneImageDesc, sceneIndex = 0, totalScenes = 1, customInstruction } = req.body;
+    const { scene, character, previousSceneImageDesc, sceneIndex = 0, totalScenes = 1, customInstruction, environment } = req.body;
     if (!scene) return res.status(400).json({ error: 'scene is required' });
 
     const promptText = SYSTEM_PROMPTS.getImagePromptGenerationPrompt(
-      scene, character, previousSceneImageDesc, sceneIndex, totalScenes, customInstruction
+      scene, character, previousSceneImageDesc, sceneIndex, totalScenes, customInstruction, environment
     );
 
     const completion = await openai.chat.completions.create({
@@ -260,11 +387,34 @@ app.post('/api/prompts/image', async (req, res) => {
 
 app.post('/api/prompts/video', async (req, res) => {
   try {
-    const { scene, character, sceneIndex = 0, totalScenes = 1, customInstruction } = req.body;
+    const { scene, character, sceneIndex = 0, totalScenes = 1, customInstruction, environment, targetLanguage } = req.body;
     if (!scene) return res.status(400).json({ error: 'scene is required' });
 
+    // Auto-translate dialogue if targetLanguage is set and dialogue exists
+    let processedScene = scene;
+    const dialogueText = scene.dialogue?.text || '';
+    if (dialogueText && targetLanguage && targetLanguage !== (scene.dialogue?.language || 'Hindi')) {
+      try {
+        const langCode = LANG_CODES[targetLanguage] || targetLanguage.toLowerCase().slice(0, 2);
+        const client = await googleAuth.getClient();
+        const token = await client.getAccessToken();
+        const tRes = await fetch('https://translation.googleapis.com/language/translate/v2', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token.token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ q: dialogueText, target: langCode, format: 'text' }),
+        });
+        const tData = await tRes.json();
+        const translatedText = tData.data?.translations?.[0]?.translatedText;
+        if (translatedText) {
+          processedScene = { ...scene, dialogue: { ...scene.dialogue, text: translatedText, language: targetLanguage } };
+        }
+      } catch (tErr) {
+        console.warn('[Translation] Failed, using original dialogue:', tErr.message);
+      }
+    }
+
     const promptText = SYSTEM_PROMPTS.getVideoPromptGenerationPrompt(
-      scene, character, sceneIndex, totalScenes, customInstruction
+      processedScene, character, sceneIndex, totalScenes, customInstruction, environment, targetLanguage
     );
 
     const completion = await openai.chat.completions.create({
@@ -558,7 +708,7 @@ app.post('/api/merge', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post('/api/auto-run', async (req, res) => {
-  const { scenes, globalCharacter, sessionId } = req.body;
+  const { scenes, globalCharacter, globalEnvironments, targetLanguage, sessionId } = req.body;
 
   if (!scenes || scenes.length === 0) {
     return res.status(400).json({ error: 'scenes array is required' });
@@ -711,8 +861,34 @@ app.post('/api/auto-run', async (req, res) => {
         sendEvent({ type: 'scene_progress', sceneId, stage: 'video_prompt', status: 'generating' });
         try {
           await withRetry(async () => {
+            // Translate dialogue if targetLanguage set
+            let processedScene = { ...scene };
+            const dialogueText = scene.dialogue?.text || '';
+            if (dialogueText && targetLanguage && targetLanguage !== (scene.dialogue?.language || 'Hindi')) {
+              try {
+                const langCode = LANG_CODES[targetLanguage] || targetLanguage.toLowerCase().slice(0, 2);
+                const client = await googleAuth.getClient();
+                const token = await client.getAccessToken();
+                const tRes = await fetch('https://translation.googleapis.com/language/translate/v2', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${token.token}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ q: dialogueText, target: langCode, format: 'text' }),
+                });
+                const tData = await tRes.json();
+                const translated = tData.data?.translations?.[0]?.translatedText;
+                if (translated) processedScene = { ...processedScene, dialogue: { ...scene.dialogue, text: translated, language: targetLanguage } };
+              } catch (tErr) {
+                console.warn('[Auto-run translation] Failed:', tErr.message);
+              }
+            }
+
+            // Pick the best matching environment for this scene
+            const activeEnvironment = (globalEnvironments || []).find(e =>
+              scene.location && e.name && scene.location.toLowerCase().includes(e.name.toLowerCase())
+            ) || (globalEnvironments || [])[0] || null;
+
             const promptText = SYSTEM_PROMPTS.getVideoPromptGenerationPrompt(
-              scene, globalCharacter, i, totalScenes
+              processedScene, globalCharacter, i, totalScenes, null, activeEnvironment, targetLanguage
             );
   
             const completion = await openai.chat.completions.create({
@@ -738,8 +914,9 @@ app.post('/api/auto-run', async (req, res) => {
       if (cancelled) break;
 
       // ── Step 4: Generate Video ────────────────────────────────────────────
-      if (sceneResults[i].videoUrl) {
-        sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl: sceneResults[i].videoUrl } });
+      const existingFinalGen = sceneResults[i].videoGenerations?.find(g => g.isFinal);
+      if (existingFinalGen) {
+        sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl: existingFinalGen.videoUrl } });
       } else {
         sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'generating' });
         try {
@@ -750,10 +927,13 @@ app.post('/api/auto-run', async (req, res) => {
               sceneResults[i].duration,
               `sessions/${sessionId || 'temp'}/videos`
             );
-            sceneResults[i].videoUrl = videoUrl;
+            const genId = Math.random().toString(36).substr(2, 9);
+            const generation = { id: genId, videoUrl, createdAt: Date.now(), isFinal: true };
+            sceneResults[i].videoGenerations = [...(sceneResults[i].videoGenerations || []), generation];
+            sceneResults[i].videoUrl = videoUrl; // backward compat
             sceneResults[i].status = 'video_done';
             await saveProgress();
-            sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl } });
+            sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl, generationId: genId } });
           }, 3, 5000); // 3 retries, 5s delay between attempts
         } catch (e) {
           sendEvent({ type: 'error', sceneId, stage: 'video', message: `Failed after retries: ${e.message}` });
@@ -768,10 +948,13 @@ app.post('/api/auto-run', async (req, res) => {
       return;
     }
 
-    // ── Step 5: Merge all completed videos ────────────────────────────────
+    // ── Step 5: Merge final videos ────────────────────────────────────────
     const completedVideoUrls = sceneResults
-      .filter(s => s.videoUrl)
-      .map(s => s.videoUrl);
+      .map(s => {
+        const finalGen = s.videoGenerations?.find(g => g.isFinal);
+        return finalGen?.videoUrl || s.videoUrl;
+      })
+      .filter(Boolean);
 
     if (completedVideoUrls.length === 0) {
       sendEvent({ type: 'error', stage: 'merge', message: 'No videos were generated successfully' });
@@ -802,14 +985,15 @@ app.post('/api/auto-run', async (req, res) => {
 
 app.post('/api/sessions', async (req, res) => {
   try {
-    const { script, globalCharacter, narrativeArc, scenes, mergedVideo } = req.body;
+    const { script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
     const sessionId = Math.random().toString(36).substr(2, 9);
-    
+    const charValue = typeof globalCharacter === 'object' ? JSON.stringify(globalCharacter) : (globalCharacter || '');
+
     await query(
-      'INSERT INTO sessions (id, script, global_character, narrative_arc, scenes, merged_video) VALUES ($1, $2, $3, $4, $5::jsonb, $6)',
-      [sessionId, script || '', globalCharacter || '', narrativeArc || '', JSON.stringify(scenes || []), mergedVideo || null]
+      'INSERT INTO sessions (id, script, global_character, narrative_arc, scenes, merged_video, global_environments, target_language) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8)',
+      [sessionId, script || '', charValue, narrativeArc || '', JSON.stringify(scenes || []), mergedVideo || null, JSON.stringify(globalEnvironments || []), targetLanguage || 'Hindi']
     );
-    
+
     res.json({ sessionId });
   } catch (error) {
     console.error('Error creating session:', error);
@@ -831,19 +1015,32 @@ app.get('/api/sessions/:id', async (req, res) => {
   try {
     const { id } = req.params;
     const result = await query('SELECT * FROM sessions WHERE id = $1', [id]);
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    
+
     const row = result.rows[0];
+
+    // Backward compat: if global_character is a plain string, wrap it
+    let globalCharacter = row.global_character;
+    try {
+      const parsed = JSON.parse(globalCharacter);
+      globalCharacter = parsed;
+    } catch {
+      // plain string from old sessions — wrap
+      globalCharacter = globalCharacter ? { description: globalCharacter } : { name: '', description: '', keyFeature: '', referenceImageUrl: null };
+    }
+
     res.json({
       id: row.id,
       script: row.script,
-      globalCharacter: row.global_character,
+      globalCharacter,
       narrativeArc: row.narrative_arc,
       scenes: row.scenes,
-      mergedVideo: row.merged_video
+      mergedVideo: row.merged_video,
+      globalEnvironments: row.global_environments || [],
+      targetLanguage: row.target_language || 'Hindi',
     });
   } catch (error) {
     console.error('Error fetching session:', error);
@@ -854,24 +1051,30 @@ app.get('/api/sessions/:id', async (req, res) => {
 app.put('/api/sessions/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { script, globalCharacter, narrativeArc, scenes, mergedVideo } = req.body;
-    
+    const { script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
+    const charValue = globalCharacter !== undefined
+      ? (typeof globalCharacter === 'object' ? JSON.stringify(globalCharacter) : globalCharacter)
+      : null;
+
     const result = await query(
-      `UPDATE sessions 
-       SET script = COALESCE($1, script), 
-           global_character = COALESCE($2, global_character), 
-           narrative_arc = COALESCE($3, narrative_arc), 
-           scenes = COALESCE($4::jsonb, scenes), 
+      `UPDATE sessions
+       SET script = COALESCE($1, script),
+           global_character = COALESCE($2, global_character),
+           narrative_arc = COALESCE($3, narrative_arc),
+           scenes = COALESCE($4::jsonb, scenes),
            merged_video = COALESCE($5, merged_video),
+           global_environments = COALESCE($6::jsonb, global_environments),
+           target_language = COALESCE($7, target_language),
            updated_at = CURRENT_TIMESTAMP
-       WHERE id = $6 RETURNING id`,
-      [script, globalCharacter, narrativeArc, scenes ? JSON.stringify(scenes) : null, mergedVideo, id]
+       WHERE id = $8 RETURNING id`,
+      [script, charValue, narrativeArc, scenes ? JSON.stringify(scenes) : null, mergedVideo,
+       globalEnvironments ? JSON.stringify(globalEnvironments) : null, targetLanguage, id]
     );
-    
+
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Session not found' });
     }
-    
+
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating session:', error);

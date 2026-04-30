@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
-import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile } from 'lucide-react';
+import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -32,7 +32,7 @@ function Modal({ isOpen, onClose, title, children }) {
 
 const STAGES = ['draft', 'generating_image_prompt', 'image_prompt_ready', 'image_generating', 'image_done', 'generating_video_prompt', 'video_prompt_ready', 'video_generating', 'video_done'];
 
-const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl }) => {
+const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl }) => {
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
@@ -54,6 +54,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const [generatingScene, setGeneratingScene] = useState(false);
   const [isRefreshingImage, setIsRefreshingImage] = useState(false);
   const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
+  const [showGenerations, setShowGenerations] = useState(false);
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
@@ -150,7 +151,25 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const genVidPrompt = async () => {
     updateScene(scene.id, { status: 'generating_video_prompt' });
     try {
-      const r = await fetch(`${API}/api/prompts/video`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: globalCharacter, sceneIndex: index, totalScenes, customInstruction: vidCustomInstruction }), signal: signal() });
+      // Pick best matching environment for this scene
+      const activeEnv = (globalEnvironments || []).find(e =>
+        scene.location && e.name && scene.location.toLowerCase().includes(e.name.toLowerCase())
+      ) || (globalEnvironments || [])[0] || null;
+
+      const r = await fetch(`${API}/api/prompts/video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scene,
+          character: globalCharacter,
+          sceneIndex: index,
+          totalScenes,
+          customInstruction: vidCustomInstruction,
+          environment: activeEnv,
+          targetLanguage,
+        }),
+        signal: signal(),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       updateScene(scene.id, { videoPrompt: d.videoPrompt, duration: d.duration || scene.duration, status: 'video_prompt_ready' });
@@ -160,18 +179,54 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const genVideo = async () => {
     updateScene(scene.id, { status: 'video_generating' });
     try {
-      const r = await fetch(`${API}/api/video`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: scene.imageUrl, duration: scene.duration }), signal: signal() });
+      const r = await fetch(`${API}/api/video`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: scene.imageUrl, duration: scene.duration }),
+        signal: signal(),
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      updateScene(scene.id, { videoUrl: d.videoUrl, status: 'video_done' });
+      const genId = Math.random().toString(36).substr(2, 9);
+      const generation = { id: genId, videoUrl: d.videoUrl, createdAt: Date.now(), isFinal: true };
+      // Mark all existing generations as not final, then add new one as final
+      const prevGens = (scene.videoGenerations || []).map(g => ({ ...g, isFinal: false }));
+      updateScene(scene.id, {
+        videoGenerations: [...prevGens, generation],
+        videoUrl: d.videoUrl,
+        status: 'video_done',
+      });
     } catch (e) { if (e.name !== 'AbortError') { alert(e.message); updateScene(scene.id, { status: 'video_prompt_ready' }); } }
+  };
+
+  const setFinalGeneration = (genId) => {
+    const updated = (scene.videoGenerations || []).map(g => ({ ...g, isFinal: g.id === genId }));
+    const finalGen = updated.find(g => g.isFinal);
+    updateScene(scene.id, { videoGenerations: updated, videoUrl: finalGen?.videoUrl || scene.videoUrl });
+  };
+
+  const deleteGeneration = (genId) => {
+    const updated = (scene.videoGenerations || []).filter(g => g.id !== genId);
+    // If deleted was final, mark last one as final
+    if (!updated.some(g => g.isFinal) && updated.length > 0) {
+      updated[updated.length - 1] = { ...updated[updated.length - 1], isFinal: true };
+    }
+    const finalGen = updated.find(g => g.isFinal);
+    updateScene(scene.id, {
+      videoGenerations: updated,
+      videoUrl: finalGen?.videoUrl || null,
+      status: updated.length === 0 ? 'video_prompt_ready' : 'video_done',
+    });
   };
 
   const isGenerating = status.includes('generating');
   const hasImgP = Boolean(scene.imagePrompt);
   const hasImg = Boolean(scene.imageUrl);
   const hasVidP = Boolean(scene.videoPrompt);
-  const hasVid = Boolean(scene.videoUrl);
+  const videoGenerations = scene.videoGenerations || [];
+  const finalGen = videoGenerations.find(g => g.isFinal);
+  const hasVid = Boolean(finalGen?.videoUrl || scene.videoUrl);
+  const activeVideoUrl = finalGen?.videoUrl || scene.videoUrl || null;
 
   const statusColors = { draft: 'bg-gray-100 text-gray-500', generating_image_prompt: 'bg-amber-100 text-amber-700', image_prompt_ready: 'bg-blue-100 text-blue-700', image_generating: 'bg-amber-100 text-amber-700', image_done: 'bg-blue-100 text-blue-700', generating_video_prompt: 'bg-amber-100 text-amber-700', video_prompt_ready: 'bg-purple-100 text-purple-700', video_generating: 'bg-amber-100 text-amber-700', video_done: 'bg-green-100 text-green-700' };
   const statusLabels = { draft: 'Draft', generating_image_prompt: 'Generating Prompt…', image_prompt_ready: 'Image Prompt Ready', image_generating: 'Rendering Image…', image_done: 'Image Done', generating_video_prompt: 'Generating Prompt…', video_prompt_ready: 'Video Prompt Ready', video_generating: 'Rendering Video…', video_done: '✓ Complete' };
@@ -499,7 +554,60 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
                     </div>
                   </div>
 
-                  {hasVidP && <Btn onClick={status === 'video_generating' ? handleStop : genVideo} variant={status === 'video_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-4 shrink-0">{status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : 'Generate Video (Veo 3)'}</Btn>}
+                  {hasVidP && (
+                    <Btn 
+                      onClick={status === 'video_generating' ? handleStop : genVideo} 
+                      variant={status === 'video_generating' ? 'danger' : 'primary'} 
+                      className="w-full py-4 text-lg rounded-2xl mt-4 shrink-0"
+                    >
+                      {status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : videoGenerations.length > 0 ? 'Generate Another Attempt' : 'Generate Video (Veo 3)'}
+                    </Btn>
+                  )}
+
+                  {/* Generation History */}
+                  {videoGenerations.length > 0 && (
+                    <div className="mt-3 border border-gray-200 rounded-2xl overflow-hidden">
+                      <button
+                        onClick={() => setShowGenerations(o => !o)}
+                        className="w-full px-3 py-2.5 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+                      >
+                        <span className="text-[11px] font-black text-gray-600 uppercase tracking-widest">Generations ({videoGenerations.length})</span>
+                        {showGenerations ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+                      </button>
+                      {showGenerations && (
+                        <div className="p-2 space-y-2 max-h-[300px] overflow-y-auto">
+                          {videoGenerations.map((gen, gi) => (
+                            <div key={gen.id} className={`border rounded-xl overflow-hidden ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                              <div className="flex items-center justify-between px-2.5 py-1.5">
+                                <span className="text-[10px] font-bold text-gray-500">Attempt {gi + 1}</span>
+                                <div className="flex items-center gap-1">
+                                  {gen.isFinal ? (
+                                    <span className="flex items-center gap-1 text-[10px] font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                                      <Check className="w-2.5 h-2.5" strokeWidth={3} /> Final
+                                    </span>
+                                  ) : (
+                                    <button
+                                      onClick={() => setFinalGeneration(gen.id)}
+                                      className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition-colors"
+                                    >
+                                      Set Final
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => { if (window.confirm('Delete this generation?')) deleteGeneration(gen.id); }}
+                                    className="w-5 h-5 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                              <video src={getMediaUrl(gen.videoUrl)} controls className="w-full max-h-[180px] object-contain bg-black" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </>
               )}
             </div>
@@ -513,7 +621,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             <div className="flex-1 flex flex-col min-h-0 min-w-0 space-y-2">
               <label className="text-xs font-black text-gray-400 uppercase tracking-widest block text-center">Final Video Render</label>
               <div className="bg-black rounded-3xl overflow-hidden shadow-2xl border-8 border-gray-900 flex-1 min-h-0">
-                <video src={getMediaUrl(scene.videoUrl)} onError={refreshVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
+                <video src={getMediaUrl(activeVideoUrl)} onError={refreshVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
               </div>
             </div>
           )}

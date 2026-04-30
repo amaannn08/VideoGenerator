@@ -1,5 +1,5 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// SHARED STYLE ANCHORS — used across all three generators
+// SHARED STYLE ANCHORS
 // ─────────────────────────────────────────────────────────────────────────────
 
 const IMAGE_QUALITY_TAIL = `portrait composition (9:16), cinematic, ultra realistic, 4k, volumetric lighting, extreme shallow depth of field, character in sharp focus, background blurred, film still`;
@@ -7,7 +7,7 @@ const IMAGE_QUALITY_TAIL = `portrait composition (9:16), cinematic, ultra realis
 const VIDEO_QUALITY_TAIL = `cinematic quality, realistic motion, precise lip sync, depth of field, character always in sharp focus at all times`;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SCENE SPLITTER PROMPT
+// SCENE SPLITTER PROMPT (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getSceneSplitPrompt(script, sceneCount = 0) {
@@ -68,118 +68,155 @@ ${script}
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IMAGE PROMPT GENERATOR
+// CHARACTER EXTRACTION PROMPT
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getImagePromptGenerationPrompt(scene, character, previousSceneImageDesc, sceneIndex, totalScenes, customInstruction) {
+function getCharacterExtractPrompt(script) {
+  return `You are a casting director and visual development artist. Read the script below and extract the PRIMARY character.
+
+Rules:
+1. "name" — the character's name as written in the script.
+2. "description" — full physical description: skin tone, build, approximate age, exact attire with fabric/color/condition, hair, and any distinguishing features. Write this as a dense, single paragraph that can be copy-pasted verbatim into an image generation prompt.
+3. "keyFeature" — ONE visually identifying phrase, 5–10 words max, that makes this character instantly recognisable across frames. This must be a specific physical detail, NOT an emotion. Examples: "deep battle scar across left jaw, hollow dark eyes" / "silver-streaked long hair, worn monk's robes". Do NOT use personality traits or emotional states.
+
+Output ONLY valid JSON. No markdown, no explanation.
+{
+  "name": "...",
+  "description": "...",
+  "keyFeature": "..."
+}
+
+SCRIPT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${script}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ENVIRONMENT EXTRACTION PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getEnvironmentExtractPrompt(script) {
+  return `You are a production designer. Read the script below and extract all distinct LOCATIONS / ENVIRONMENTS.
+
+Rules:
+1. Each environment must be a real physical place mentioned or implied in the script.
+2. "name" — short location name (e.g. "Kalinga Battlefield", "Royal Throne Room").
+3. "description" — 2–3 sentence atmospheric description: surface material, weather, lighting conditions, surrounding elements, scale.
+4. "keyFeature" — ONE phrase (5–10 words) that is the single most visually distinctive atmospheric detail of this location. Examples: "blood-soaked red earth under grey overcast sky" / "torch-lit stone columns casting long shadows". Must be a visual fact, NOT an emotion.
+
+Output ONLY valid JSON. No markdown, no explanation.
+{
+  "environments": [
+    {
+      "id": "env_1",
+      "name": "...",
+      "description": "...",
+      "keyFeature": "..."
+    }
+  ]
+}
+
+SCRIPT:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+${script}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IMAGE PROMPT GENERATOR — Structured Block Format
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getImagePromptGenerationPrompt(scene, character, previousSceneImageDesc, sceneIndex, totalScenes, customInstruction, environment) {
+  // character can be object { name, description, keyFeature } or legacy string
+  const charDescription = typeof character === 'object' ? (character.description || '') : (character || '');
+  const charKeyFeature = typeof character === 'object' ? (character.keyFeature || '') : '';
+  const envKeyFeature = environment?.keyFeature || scene.location || '';
+
   const isFirstScene = sceneIndex === 0;
   const continuityNote = isFirstScene
     ? `This is scene 1 of ${totalScenes}. Establish the character clearly from scratch.`
-    : `This is scene ${sceneIndex + 1} of ${totalScenes}. The character's face, skin tone, build, and attire MUST be identical to scene ${sceneIndex}. Do not change anything about the character's physical appearance. Only the expression, posture, and environment differ.`;
+    : `This is scene ${sceneIndex + 1} of ${totalScenes}. The character's face, skin tone, build, and attire MUST be identical to the previous scene. Only expression, posture, and environment differ.`;
 
-  const prevNote = previousSceneImageDesc
-    ? `PREVIOUS SCENE VISUAL REFERENCE: "${previousSceneImageDesc}" — match the character's appearance exactly.`
-    : '';
+  return `You are a cinematic image prompt engineer for AI image generators (Gemini, Flux, DALL-E, Stable Diffusion). You produce prompts for 9:16 portrait film stills.
 
-  return `You are an expert cinematic image prompt engineer specializing in portrait (9:16) film-still quality prompts for AI image generators (Gemini, Flux, DALL-E, Stable Diffusion).
-
-Your ONLY job: produce one dense, comma-separated image generation prompt that is ready to paste into an image tool.
-
-⚠️ CRITICAL CONTENT POLICY — MUST FOLLOW:
-- NEVER use any real person's name, historical figure's name, or celebrity name in the imagePrompt output.
-- DO NOT write "Emperor Ashoka", "Napoleon", "Gandhi", or ANY real person's name.
-- ALWAYS describe the character by physical appearance only: "a battle-worn ancient warrior king", "a middle-aged man with brown skin in simple undyed robes", etc.
-- This rule is non-negotiable. Real names will cause the generation to be blocked.
+⚠️ CONTENT POLICY — MANDATORY:
+- NEVER use any real person's name, historical figure's name, or celebrity name in the output.
+- ALWAYS describe the character by physical appearance only (e.g. "a battle-worn ancient warrior king").
+- This rule is non-negotiable.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SCENE CONTEXT:
+SCENE INPUTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Scene Title: ${scene.title || `Scene ${sceneIndex + 1}`}
+Scene: ${scene.title || `Scene ${sceneIndex + 1}`}
 Action: ${scene.summary}
 Location: ${scene.location}
 Time of Day: ${scene.timeOfDay}
 Emotional Tone: ${scene.emotionalTone}
 Camera Work: ${scene.cameraWork}
-Transition Into This Scene: ${scene.transitionFrom || 'Opening scene'}
-${prevNote}
-
-${customInstruction ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUSER CUSTOM INSTRUCTION:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${customInstruction}\nMake sure to incorporate this specific instruction into the final prompt.\n` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CHARACTER ANCHOR (copy these descriptors VERBATIM into the prompt — never deviate):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${character || 'Character not specified'}
-
-CONTINUITY NOTE: ${continuityNote}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-PROMPT STRUCTURE — weave ALL of these layers into one flowing paragraph:
+${previousSceneImageDesc ? `Previous Scene Visual: ${previousSceneImageDesc}` : ''}
+${customInstruction ? `Custom Instruction: ${customInstruction}` : ''}
+Continuity: ${continuityNote}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-1. SHOT + COMPOSITION: Open with shot type (full body / medium portrait / tight close-up), camera angle, and where the character sits in the 9:16 frame (center foreground / slightly off-center / dominant foreground).
+Your output is a structured image generation prompt using LABELED BLOCKS.
+Each block is a discrete, self-contained instruction. Do NOT write flowing prose.
+The image model reads each block separately and applies it literally.
 
-2. CHARACTER ANCHOR (MANDATORY — copy verbatim from above): All physical descriptors — skin tone, build, exact attire with condition (dusty / worn / clean), no crown unless the character description says so.
+OUTPUT FORMAT — produce EXACTLY this structure, filling each block:
 
-3. FACIAL EXPRESSION + EYES: Describe with surgical precision based on emotionalTone. Not just "sad" — describe jaw tension, moisture in eyes, specific eye communication, lip position.
-
-4. BODY LANGUAGE + POSTURE: Standing still / walking with heavy pace / crouching — describe physical weight and intent. How do clothes respond to wind or motion?
-
-5. BACKGROUND (always shallow DOF blur): Atmospheric strokes only — silhouettes, scattered weapons, rubble, fog, smoke. Never competes with character. Background should suggest the location without being sharp.
-
-6. LIGHTING: Name the source (setting sun / diffused overcast light / torchlight). Specify tone (warm orange + dark shadows / muted desaturated earthy / soft diffused blue-grey). Shadow direction on the character's face.
-
-7. ATMOSPHERE: Dust particles drifting through frame, fog density, wind effect on hair and fabric, sky condition (dark clouds / hazy horizon / weak sunlight through smoke).
-
-8. END EVERY PROMPT WITH EXACTLY: ${IMAGE_QUALITY_TAIL}
+CHARACTER: [Copy the character description verbatim — do NOT rephrase, summarise, or omit any detail]
+CHARACTER_KEY_FEATURE: [${charKeyFeature || 'N/A — use the most visually distinct physical detail from the CHARACTER block'}]
+ACTION: [One sentence: exactly what the character is doing in this frame. Be specific — not "he stands" but "he stands motionless, both hands hanging at his sides, weight shifted slightly to his left foot".]
+EXPRESSION: [One sentence: exact facial state — jaw position, eye state, mouth, specific micro-expression. Map directly from emotional tone: "${scene.emotionalTone}"]
+POSTURE: [One sentence: body language, weight distribution, how clothing drapes/moves]
+ENVIRONMENT: [${envKeyFeature}. Background only — do NOT place the character here. 1–2 sentences of atmospheric detail.]
+LIGHTING: [One sentence: light source name, direction, color temperature, shadow position on face]
+CAMERA: [${scene.cameraWork}. One sentence: shot type (full body / medium / tight close-up), character position in 9:16 frame]
+STYLE: ${IMAGE_QUALITY_TAIL}
 
 Output ONLY valid JSON. Nothing else.
 {
-  "imagePrompt": "..."
+  "imagePrompt": "CHARACTER: ... \\nCHARACTER_KEY_FEATURE: ... \\nACTION: ... \\nEXPRESSION: ... \\nPOSTURE: ... \\nENVIRONMENT: ... \\nLIGHTING: ... \\nCAMERA: ... \\nSTYLE: ${IMAGE_QUALITY_TAIL}"
 }`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// VIDEO PROMPT GENERATOR
+// VIDEO PROMPT GENERATOR — Structured Block Format
 // ─────────────────────────────────────────────────────────────────────────────
 
-function getVideoPromptGenerationPrompt(scene, character, sceneIndex, totalScenes, customInstruction) {
-  // Normalise dialogue — handle both nested object and flat fields (for backward compat)
+function getVideoPromptGenerationPrompt(scene, character, sceneIndex, totalScenes, customInstruction, environment, targetLanguage) {
+  // character can be object or legacy string
+  const charDescription = typeof character === 'object' ? (character.description || '') : (character || '');
+  const charKeyFeature = typeof character === 'object' ? (character.keyFeature || '') : '';
+  const envKeyFeature = environment?.keyFeature || scene.location || '';
+
+  // Resolve dialogue
   const dlg = scene.dialogue || {};
   const dialogueText = (dlg.text || scene.dialogueText || '').trim();
-  const dialogueLang = dlg.language || scene.language || 'Hindi';
   const dialogueTone = dlg.tone || scene.dialogueTone || 'calm and deliberate';
   const dialoguePacing = dlg.pacing || scene.dialoguePacing || 'slow with natural pauses';
+  const outputLang = targetLanguage || dlg.language || 'Hindi';
   const hasDialogue = dialogueText.length > 0;
 
   const dialogueBlock = hasDialogue
-    ? `The character should speak in a ${dialogueTone} voice in ${dialogueLang}:
-"${dialogueText}"
-Delivery pacing: ${dialoguePacing}.
-Ensure precise lip sync, natural breathing pauses between phrases, and micro-expressions matching the emotional tone during and between spoken words.`
-    : `This scene has no spoken dialogue. The character should remain silent. Convey all emotion through micro-expressions, body language, and subtle physical reactions only.`;
+    ? `DIALOGUE: "${dialogueText}" — spoken in ${outputLang}, tone: ${dialogueTone}, pacing: ${dialoguePacing}. Precise lip sync required. The spoken words are fixed — do NOT alter, add to, or replace this line.`
+    : `DIALOGUE: None. Character remains silent. Convey all emotion through facial micro-expressions and body language only.`;
 
-  return `You are an expert cinematic video motion prompt engineer for AI video generators (Veo 3, Kling, Runway, Pika). You specialize in portrait (9:16) short-form cinematic video prompts.
+  return `You are a cinematic video prompt engineer for AI video generators (Veo 3, Kling, Runway, Pika). You produce prompts for 9:16 portrait short-form clips.
 
-Generate ONE flowing, dense video prompt — written as if you are directing both the cinematographer and the actor simultaneously. Do NOT use bullet points.
+I have attached a reference image of the character. This image is the visual ground truth — the generated video MUST match it exactly.
 
-⚠️ CRITICAL CONTENT POLICY — MUST FOLLOW OR THE VIDEO WILL BE BLOCKED:
-- NEVER use any real person's name, historical figure's name, celebrity name, or public figure's name anywhere in the videoPrompt output.
-- DO NOT write "Emperor Ashoka", "Napoleon", "Gandhi", "Caesar", or ANY other real person's name.
-- ALWAYS substitute names with purely physical descriptions: "a battle-worn ancient warrior king", "a middle-aged man with brown skin", "an ancient ruler in simple undyed robes", etc.
-- The character is FICTIONAL for the purposes of this prompt — describe them only by appearance, attire, and emotional state.
-- This rule applies to the opening sentence, dialogue attribution, and every other part of the prompt.
-- Violation of this rule will cause the video generation to be blocked entirely.
-
-⚠️ VERTEX AI RAI SAFETY RULES — MANDATORY TO AVOID CONTENT FILTER:
-- NEVER use the word "mature" to describe a person. Use "adult" or describe age through context only (e.g. "a young adult woman in her early twenties").
-- NEVER use phrases like "trembling lips", "quivering", "breath catching", "heaving", or any phrasing that could be interpreted as sexually suggestive — even in a completely non-sexual context.
-- NEVER over-describe a female character's body parts, build, or physical form beyond what is necessary for costume/attire context.
-- For physical reactions, use neutral language: "lips part slightly", "exhale visible", "a slow blink", "jaw relaxes", "gaze sharpens", "posture tightens".
-- NEVER describe a character as "sensual", "vulnerable", "soft", "fragile", or any term with physical-emotional ambiguity.
-- Keep ALL physical descriptions anchored to action, costume, and storytelling — not the body itself.
-- When in doubt, describe what the CHARACTER DOES, not what their body looks like.
+⚠️ CONTENT POLICY — MANDATORY:
+- NEVER use any real person's name, historical figure's name, or celebrity name.
+- ALWAYS describe the character by physical appearance only.
+- NEVER use "mature" to describe a person. Use "adult" or age context only.
+- NEVER use: "trembling lips", "quivering", "heaving", "sensual", "vulnerable", "fragile".
+- For physical reactions use: "lips part slightly", "exhale visible", "jaw relaxes", "gaze sharpens", "posture tightens".
+${customInstruction ? `\nCustom Instruction: ${customInstruction}` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-SCENE CONTEXT:
+SCENE INPUTS:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Scene ${sceneIndex + 1} of ${totalScenes}: ${scene.title || scene.summary}
 Action: ${scene.summary}
@@ -188,58 +225,41 @@ Time of Day: ${scene.timeOfDay}
 Emotional Tone: ${scene.emotionalTone}
 Camera Work: ${scene.cameraWork}
 Duration: ${scene.duration} seconds
-Transition From Previous: ${scene.transitionFrom || 'Opening scene — establish character and world'}
-Transition Into Next: ${scene.transitionTo || 'Final scene — resolve the emotional arc'}
+Transition From: ${scene.transitionFrom || 'Opening scene'}
+Transition Into: ${scene.transitionTo || 'Final scene'}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-${customInstruction ? `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\nUSER CUSTOM INSTRUCTION:\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n${customInstruction}\nMake sure to incorporate this specific instruction into the final prompt.\n` : ''}
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CHARACTER (reference image is attached — match exactly):
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-${character || 'Character not specified'}
+Your output is a structured video generation prompt using LABELED BLOCKS.
+Each block is a discrete, self-contained instruction. Do NOT write flowing prose.
+The video model reads each block separately and applies it literally.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DIALOGUE & VOICE:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+OUTPUT FORMAT — produce EXACTLY this structure, filling each block:
+
+CHARACTER: [Copy the character description verbatim — do NOT rephrase, summarise, or omit. Match the attached reference image exactly.]
+CHARACTER_KEY_FEATURE: [${charKeyFeature || 'Most visually distinct physical detail from CHARACTER block'}]
+ACTION_START: [One sentence: exactly what the character is doing at the very first frame of the clip]
+ACTION_END: [One sentence: exactly what the character is doing at the very last frame of the clip — must show a clear physical progression from ACTION_START]
 ${dialogueBlock}
+EXPRESSION_ARC: Start — [exact facial state at clip open: jaw, eyes, mouth]. End — [exact facial state at clip close, reflecting emotional progression].
+CAMERA: [${scene.cameraWork}. Shot type, framing in 9:16, movement speed and direction — one sentence]
+ENVIRONMENT: [${envKeyFeature}. Background motion details — 2–3 specific subtle motions (e.g. "cloth fluttering in wind, dust drifting left, distant silhouettes barely moving"). Background must be blurred, not competing with character.]
+LIGHTING: [Light source, dominant color temperature, shadow direction on character's face, any temperature shift during clip]
+STYLE: ${VIDEO_QUALITY_TAIL}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-WEAVE ALL OF THESE LAYERS into the single flowing paragraph:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-1. OPENING STATEMENT: "I have attached an image of [PHYSICAL description only — NO names, NO 'mature', e.g. 'a young adult woman with warm brown skin in a patched earth-tone tunic']. Create a cinematic video in portrait (9:16) format where..." — NEVER use any real person's name. NEVER use the word 'mature'. Use neutral, action-focused language throughout.
-
-2. SHOT FRAMING: Specify the shot type (${scene.cameraWork}), where the character sits in frame (foreground / center), and depth of field separation.
-
-3. CAMERA MOVEMENT: Describe the exact movement — speed (very slow / subtle / moderate), feel (smooth / slight handheld shake for tension / fluid tracking), direction.
-
-4. CHARACTER ANIMATION ARC: Describe the facial expression at the START of the clip and how it EVOLVES toward the END. Include micro-expressions: jaw tension, eye moisture, slow blinking, exhale, slight head movement, subtle trembling.
-
-5. BODY LANGUAGE: Posture, weight, pace if walking. How clothing and hair respond to wind. Dust or particles passing through frame.
-
-6. BACKGROUND ACTIVITY: Level of motion (chaotic / subdued / nearly still). Blur intensity ("slightly blurred but alive" / "heavily blurred"). 2–3 specific subtle motions (cloth fluttering, dust drifting, distant silhouettes).
-
-7. LIGHTING & COLOR: Light source, dominant color tone, shadow direction. If there is an emotional shift, describe a color temperature transition (warm → cool during the clip).
-
-8. ENVIRONMENT: Particle effects (dust density + direction), wind intensity, ambient elements (rising dust, drifting embers).
-
-9. DIALOGUE DELIVERY (already specified above — reinforce it in the prompt naturally).
-
-10. END WITH: ${VIDEO_QUALITY_TAIL}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DURATION RULE: Return an integer that MUST be exactly 4, 6, or 8 — the ideal clip length for this scene.
+DURATION RULE: Return an integer — MUST be exactly 4, 6, or 8.
 ${scene.duration === 4 ? 'Lean toward 4 for this tight, punchy scene.' : scene.duration === 6 ? 'Lean toward 6 for this scene.' : 'Lean toward 8 for this emotionally expansive scene.'}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Output ONLY valid JSON. Nothing else.
 {
-  "videoPrompt": "...",
+  "videoPrompt": "CHARACTER: ... \\nCHARACTER_KEY_FEATURE: ... \\nACTION_START: ... \\nACTION_END: ... \\nDIALOGUE: ... \\nEXPRESSION_ARC: ... \\nCAMERA: ... \\nENVIRONMENT: ... \\nLIGHTING: ... \\nSTYLE: ${VIDEO_QUALITY_TAIL}",
   "duration": 8
 }`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SINGLE SCENE GENERATOR FROM FREE-TEXT PROMPT
+// SINGLE SCENE GENERATOR FROM FREE-TEXT PROMPT (unchanged)
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getSceneFromPromptPrompt(userPrompt, character, sceneIndex, totalScenes) {
@@ -250,7 +270,7 @@ User description:
 
 Context:
 - This is scene ${sceneIndex + 1} of ${totalScenes} in the project.
-- Global character anchor: ${character || 'Not yet defined — infer from the description.'}
+- Global character anchor: ${typeof character === 'object' ? (character.description || 'Not yet defined') : (character || 'Not yet defined — infer from the description.')}
 
 Rules:
 1. "duration" MUST be exactly 4, 6, or 8 (integer).
@@ -289,4 +309,6 @@ export const SYSTEM_PROMPTS = {
   getImagePromptGenerationPrompt,
   getVideoPromptGenerationPrompt,
   getSceneFromPromptPrompt,
+  getCharacterExtractPrompt,
+  getEnvironmentExtractPrompt,
 };
