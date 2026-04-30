@@ -6,7 +6,7 @@ const LANGUAGES = ['Hindi','English','Tamil','Telugu','Bengali','Marathi','Punja
 
 export default function ScriptPanel({ script, setScript, sceneCount, setSceneCount, targetLanguage, setTargetLanguage, onSplit, loading }) {
   return (
-    <section className="surface" style={{ padding: '20px 24px' }}>
+    <section className="surface" style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', flex: 1, height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
         <span className="step-badge">1</span>
         <h2 className="section-title">Master Script</h2>
@@ -17,7 +17,7 @@ export default function ScriptPanel({ script, setScript, sceneCount, setSceneCou
         onChange={e => setScript(e.target.value)}
         placeholder="Paste your master script here… The AI will break it into scenes, extract dialogue, emotional arcs, and generate everything automatically."
         className="cine-input"
-        style={{ minHeight: 130, resize: 'vertical', lineHeight: 1.65, fontFamily: 'inherit' }}
+        style={{ flex: 1, minHeight: 300, resize: 'none', lineHeight: 1.65, fontFamily: 'inherit' }}
       />
 
       <div style={{
