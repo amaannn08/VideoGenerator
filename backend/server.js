@@ -113,6 +113,31 @@ function extractJson(text) {
   }
 }
 
+function normalizeCharacterList(input) {
+  if (Array.isArray(input)) {
+    return input
+      .filter((item) => item && typeof item === 'object')
+      .map((item, idx) => ({
+        id: item.id || `char_${idx + 1}`,
+        name: item.name || '',
+        description: item.description || '',
+        keyFeature: item.keyFeature || '',
+        referenceImageUrl: item.referenceImageUrl || null,
+      }))
+      .filter((item) => item.name || item.description || item.keyFeature);
+  }
+
+  if (input && typeof input === 'object') {
+    return normalizeCharacterList([input]);
+  }
+
+  if (typeof input === 'string' && input.trim()) {
+    return normalizeCharacterList([{ description: input.trim() }]);
+  }
+
+  return [];
+}
+
 async function downloadFile(url, destPath) {
   const fetchUrl = url.includes('generativelanguage') ? (url.includes('?') ? `${url}&key=${GOOGLE_API_KEY}` : `${url}?key=${GOOGLE_API_KEY}`) : url;
   const res = await fetch(fetchUrl);
@@ -287,7 +312,8 @@ app.post('/api/extract/character', async (req, res) => {
 
     let data = extractJson(completion.choices[0].message.content);
     if (!data) data = JSON.parse(completion.choices[0].message.content);
-    res.json({ character: data });
+    const characters = normalizeCharacterList(data?.characters || data?.character || data);
+    res.json({ characters, character: characters[0] || null });
   } catch (error) {
     console.error('Error in /api/extract/character:', error);
     res.status(500).json({ error: error.message });
@@ -708,7 +734,7 @@ app.post('/api/merge', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post('/api/auto-run', async (req, res) => {
-  const { scenes, globalCharacter, globalEnvironments, targetLanguage, sessionId } = req.body;
+  const { scenes, globalCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId } = req.body;
 
   if (!scenes || scenes.length === 0) {
     return res.status(400).json({ error: 'scenes array is required' });
@@ -730,6 +756,19 @@ app.post('/api/auto-run', async (req, res) => {
   req.on('close', () => { cancelled = true; });
 
   const totalScenes = scenes.length;
+  const normalizedCharacters = normalizeCharacterList(globalCharacters?.length ? globalCharacters : globalCharacter);
+  const fallbackCharacter = normalizedCharacters[0] || normalizeCharacterList(globalCharacter)[0] || { description: '' };
+  const resolveSceneCharacter = (scene) => (
+    normalizedCharacters.find(c => c.id && c.id === scene?.selectedCharacterId) || fallbackCharacter
+  );
+  const resolveSceneEnvironment = (scene) => (
+    (globalEnvironments || []).find(e => e.id && e.id === scene?.selectedEnvironmentId) ||
+    (globalEnvironments || []).find(e =>
+      scene?.location && e.name && scene.location.toLowerCase().includes(e.name.toLowerCase())
+    ) ||
+    (globalEnvironments || [])[0] ||
+    null
+  );
 
   try {
     // We need to track the accumulated scene data as we go
@@ -762,7 +801,7 @@ app.post('/api/auto-run', async (req, res) => {
               : null;
   
             const promptText = SYSTEM_PROMPTS.getImagePromptGenerationPrompt(
-              scene, globalCharacter, previousSceneImageDesc, i, totalScenes
+              scene, resolveSceneCharacter(scene), previousSceneImageDesc, i, totalScenes, null, resolveSceneEnvironment(scene)
             );
   
             const completion = await openai.chat.completions.create({
@@ -882,13 +921,8 @@ app.post('/api/auto-run', async (req, res) => {
               }
             }
 
-            // Pick the best matching environment for this scene
-            const activeEnvironment = (globalEnvironments || []).find(e =>
-              scene.location && e.name && scene.location.toLowerCase().includes(e.name.toLowerCase())
-            ) || (globalEnvironments || [])[0] || null;
-
             const promptText = SYSTEM_PROMPTS.getVideoPromptGenerationPrompt(
-              processedScene, globalCharacter, i, totalScenes, null, activeEnvironment, targetLanguage
+              processedScene, resolveSceneCharacter(scene), i, totalScenes, null, resolveSceneEnvironment(scene), targetLanguage
             );
   
             const completion = await openai.chat.completions.create({
@@ -985,9 +1019,10 @@ app.post('/api/auto-run', async (req, res) => {
 
 app.post('/api/sessions', async (req, res) => {
   try {
-    const { script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
+    const { script, globalCharacter, globalCharacters, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
     const sessionId = Math.random().toString(36).substr(2, 9);
-    const charValue = typeof globalCharacter === 'object' ? JSON.stringify(globalCharacter) : (globalCharacter || '');
+    const normalizedCharacters = normalizeCharacterList(globalCharacters?.length ? globalCharacters : globalCharacter);
+    const charValue = normalizedCharacters.length ? JSON.stringify(normalizedCharacters) : '';
 
     await query(
       'INSERT INTO sessions (id, script, global_character, narrative_arc, scenes, merged_video, global_environments, target_language) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7::jsonb, $8)',
@@ -1022,19 +1057,19 @@ app.get('/api/sessions/:id', async (req, res) => {
 
     const row = result.rows[0];
 
-    // Backward compat: if global_character is a plain string, wrap it
-    let globalCharacter = row.global_character;
+    let parsedCharacterData = row.global_character;
     try {
-      const parsed = JSON.parse(globalCharacter);
-      globalCharacter = parsed;
+      parsedCharacterData = JSON.parse(parsedCharacterData);
     } catch {
-      // plain string from old sessions — wrap
-      globalCharacter = globalCharacter ? { description: globalCharacter } : { name: '', description: '', keyFeature: '', referenceImageUrl: null };
+      // Keep as-is for normalization below.
     }
+    const globalCharacters = normalizeCharacterList(parsedCharacterData);
+    const globalCharacter = globalCharacters[0] || { name: '', description: '', keyFeature: '', referenceImageUrl: null };
 
     res.json({
       id: row.id,
       script: row.script,
+      globalCharacters,
       globalCharacter,
       narrativeArc: row.narrative_arc,
       scenes: row.scenes,
@@ -1051,9 +1086,9 @@ app.get('/api/sessions/:id', async (req, res) => {
 app.put('/api/sessions/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const { script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
-    const charValue = globalCharacter !== undefined
-      ? (typeof globalCharacter === 'object' ? JSON.stringify(globalCharacter) : globalCharacter)
+    const { script, globalCharacter, globalCharacters, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
+    const charValue = (globalCharacter !== undefined || globalCharacters !== undefined)
+      ? JSON.stringify(normalizeCharacterList(globalCharacters?.length ? globalCharacters : globalCharacter))
       : null;
 
     const result = await query(

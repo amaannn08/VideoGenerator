@@ -32,7 +32,7 @@ function Modal({ isOpen, onClose, title, children }) {
 
 const STAGES = ['draft', 'generating_image_prompt', 'image_prompt_ready', 'image_generating', 'image_done', 'generating_video_prompt', 'video_prompt_ready', 'video_generating', 'video_done'];
 
-const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl }) => {
+const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalCharacters = [], globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl }) => {
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
@@ -67,6 +67,14 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvi
   useEffect(() => setLocalDuration(scene.duration || 8), [scene.duration]);
   useEffect(() => setImgCustomInstruction(scene.imgCustomInstruction || ''), [scene.imgCustomInstruction]);
   useEffect(() => setVidCustomInstruction(scene.vidCustomInstruction || ''), [scene.vidCustomInstruction]);
+
+  const getAutoEnvironment = () => (
+    (globalEnvironments || []).find(e =>
+      scene.location && e.name && scene.location.toLowerCase().includes(e.name.toLowerCase())
+    ) || (globalEnvironments || [])[0] || null
+  );
+  const activeEnvironment = (globalEnvironments || []).find(e => e.id === scene.selectedEnvironmentId) || getAutoEnvironment();
+  const activeCharacter = (globalCharacters || []).find(c => c.id === scene.selectedCharacterId) || globalCharacter;
 
   const saveDialogue = (text, tone, pacing, lang) => {
     updateScene(scene.id, { dialogue: { ...(scene.dialogue || {}), text, tone, pacing, language: lang } });
@@ -114,7 +122,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvi
       const r = await fetch(`${API}/api/scenes/generate-one`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userPrompt: scenePromptInput, globalCharacter, sceneIndex: index, totalScenes }),
+        body: JSON.stringify({ userPrompt: scenePromptInput, globalCharacter: activeCharacter, sceneIndex: index, totalScenes }),
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
@@ -130,7 +138,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvi
   const genImgPrompt = async () => {
     updateScene(scene.id, { status: 'generating_image_prompt' });
     try {
-      const r = await fetch(`${API}/api/prompts/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: globalCharacter, previousSceneImageDesc: previousSceneImage, sceneIndex: index, totalScenes, customInstruction: imgCustomInstruction }), signal: signal() });
+      const r = await fetch(`${API}/api/prompts/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: activeCharacter, previousSceneImageDesc: previousSceneImage, sceneIndex: index, totalScenes, customInstruction: imgCustomInstruction, environment: activeEnvironment }), signal: signal() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       updateScene(scene.id, { imagePrompt: d.imagePrompt, status: 'image_prompt_ready' });
@@ -151,21 +159,16 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvi
   const genVidPrompt = async () => {
     updateScene(scene.id, { status: 'generating_video_prompt' });
     try {
-      // Pick best matching environment for this scene
-      const activeEnv = (globalEnvironments || []).find(e =>
-        scene.location && e.name && scene.location.toLowerCase().includes(e.name.toLowerCase())
-      ) || (globalEnvironments || [])[0] || null;
-
       const r = await fetch(`${API}/api/prompts/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           scene,
-          character: globalCharacter,
+          character: activeCharacter,
           sceneIndex: index,
           totalScenes,
           customInstruction: vidCustomInstruction,
-          environment: activeEnv,
+          environment: activeEnvironment,
           targetLanguage,
         }),
         signal: signal(),
@@ -324,6 +327,39 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalEnvi
                 <option>each word deliberate</option>
                 <option>clipped and intense</option>
                 <option>breathless</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2">
+            <div>
+              <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">Character</label>
+              <select
+                value={scene.selectedCharacterId || ''}
+                onChange={(e) => updateScene(scene.id, { selectedCharacterId: e.target.value })}
+                className="w-full text-xs border border-indigo-100 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+              >
+                <option value="">Auto (Primary Character)</option>
+                {(globalCharacters || []).map((char, ci) => (
+                  <option key={char.id || ci} value={char.id}>
+                    {char.name || `Character ${ci + 1}`}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1 block">Environment</label>
+              <select
+                value={scene.selectedEnvironmentId || ''}
+                onChange={(e) => updateScene(scene.id, { selectedEnvironmentId: e.target.value })}
+                className="w-full text-xs border border-emerald-100 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-300"
+              >
+                <option value="">Auto (Match by Scene Location)</option>
+                {(globalEnvironments || []).map((env, ei) => (
+                  <option key={env.id || ei} value={env.id}>
+                    {env.name || `Environment ${ei + 1}`}
+                  </option>
+                ))}
               </select>
             </div>
           </div>

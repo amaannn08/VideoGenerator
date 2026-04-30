@@ -21,7 +21,7 @@ function Btn({ onClick, disabled, loading, children, variant = 'primary', classN
 function useLocalStorage(key, init) {
   const [val, setVal] = useState(() => { try { const x = window.localStorage.getItem(key); return x ? JSON.parse(x) : init; } catch { return init; } });
   const set = useCallback((v) => { setVal(prev => { const nv = typeof v === 'function' ? v(prev) : v; return nv; }); }, []);
-  useEffect(() => { const t = setTimeout(() => { try { window.localStorage.setItem(key, JSON.stringify(val)); } catch {} }, 500); return () => clearTimeout(t); }, [key, val]);
+  useEffect(() => { const t = setTimeout(() => { try { window.localStorage.setItem(key, JSON.stringify(val)); } catch { /* Ignore localStorage write failures. */ } }, 500); return () => clearTimeout(t); }, [key, val]);
   return [val, set];
 }
 
@@ -33,6 +33,27 @@ const PIPELINE_STAGES = [
   { key: 'video', label: 'Videos' },
   { key: 'merge', label: 'Merged' },
 ];
+
+const EMPTY_CHARACTER = { id: '', name: '', description: '', keyFeature: '', referenceImageUrl: null };
+
+function normalizeCharacters(input) {
+  const list = Array.isArray(input) ? input : [input];
+  return list
+    .filter(item => item && (typeof item === 'object' || typeof item === 'string'))
+    .map((item, idx) => {
+      if (typeof item === 'string') {
+        return { ...EMPTY_CHARACTER, id: `char_${idx + 1}`, description: item };
+      }
+      return {
+        id: item.id || `char_${idx + 1}`,
+        name: item.name || '',
+        description: item.description || '',
+        keyFeature: item.keyFeature || '',
+        referenceImageUrl: item.referenceImageUrl || null,
+      };
+    })
+    .filter(item => item.name || item.description || item.keyFeature);
+}
 
 export default function App() {
   // ── Auth ──────────────────────────────────────────────────────────────────
@@ -62,7 +83,8 @@ export default function App() {
   }, []);
 
   // ── App state — ALL hooks declared before any early return ────────────────
-  const [globalCharacter, setGlobalCharacter] = useLocalStorage('ai-video-character', { name: '', description: '', keyFeature: '', referenceImageUrl: null });
+  const [globalCharacters, setGlobalCharacters] = useLocalStorage('ai-video-characters', []);
+  const [primaryCharacterId, setPrimaryCharacterId] = useLocalStorage('ai-video-primary-character-id', '');
   const [globalEnvironments, setGlobalEnvironments] = useLocalStorage('ai-video-environments', []);
   const [targetLanguage, setTargetLanguage] = useLocalStorage('ai-video-lang', 'Hindi');
   const [narrativeArc, setNarrativeArc] = useLocalStorage('ai-video-arc', '');
@@ -75,12 +97,40 @@ export default function App() {
   const [merging, setMerging] = useState(false);
   const [autoRunStage, setAutoRunStage] = useState('idle');
   const [autoRunCurrentScene, setAutoRunCurrentScene] = useState(null);
-  const [autoRunProgress, setAutoRunProgress] = useState({});
+  const [, setAutoRunProgress] = useState({});
   const sseRef = useRef(null);
 
   const [sessionId, setSessionId] = useState(() => new URLSearchParams(window.location.search).get('session'));
   const [isInitializing, setIsInitializing] = useState(!!sessionId);
   const [allSessions, setAllSessions] = useState([]);
+
+  useEffect(() => {
+    if (globalCharacters.length) return;
+    try {
+      const legacy = window.localStorage.getItem('ai-video-character');
+      if (!legacy) return;
+      const parsed = JSON.parse(legacy);
+      const migrated = normalizeCharacters(parsed);
+      if (migrated.length) {
+        setGlobalCharacters(migrated);
+        setPrimaryCharacterId(migrated[0].id);
+      }
+    } catch {
+      // Ignore legacy parse issues and continue with clean state.
+    }
+  }, [globalCharacters.length, setGlobalCharacters, setPrimaryCharacterId]);
+
+  useEffect(() => {
+    if (!globalCharacters.length) {
+      if (primaryCharacterId) setPrimaryCharacterId('');
+      return;
+    }
+    if (!primaryCharacterId || !globalCharacters.some(c => c.id === primaryCharacterId)) {
+      setPrimaryCharacterId(globalCharacters[0].id);
+    }
+  }, [globalCharacters, primaryCharacterId, setPrimaryCharacterId]);
+
+  const activeCharacter = globalCharacters.find(c => c.id === primaryCharacterId) || globalCharacters[0] || EMPTY_CHARACTER;
 
   const refreshMediaUrl = useCallback(async (url) => {
     if (!url || !url.startsWith('http')) return url;
@@ -153,13 +203,9 @@ export default function App() {
           if (!data.error) {
             const hydrated = await refreshSessionMediaUrls(data);
             setScript(hydrated.script || '');
-            // Backward compat: if globalCharacter is a plain string, wrap it
-            const gc = hydrated.globalCharacter;
-            setGlobalCharacter(
-              typeof gc === 'object' && gc !== null ? gc
-              : typeof gc === 'string' && gc ? { name: '', description: gc, keyFeature: '', referenceImageUrl: null }
-              : { name: '', description: '', keyFeature: '', referenceImageUrl: null }
-            );
+            const chars = normalizeCharacters(hydrated.globalCharacters || hydrated.globalCharacter);
+            setGlobalCharacters(chars);
+            setPrimaryCharacterId(chars[0]?.id || '');
             setGlobalEnvironments(hydrated.globalEnvironments || []);
             setTargetLanguage(hydrated.targetLanguage || 'Hindi');
             setNarrativeArc(hydrated.narrativeArc || '');
@@ -172,13 +218,13 @@ export default function App() {
     } else {
       setIsInitializing(false);
     }
-  }, [sessionId, refreshSessionMediaUrls]);
+  }, [sessionId, refreshSessionMediaUrls, setGlobalCharacters, setPrimaryCharacterId, setGlobalEnvironments, setTargetLanguage, setNarrativeArc, setScenes, setMergedVideo, setScript]);
 
   useEffect(() => {
     if (isInitializing) return;
     
     // Check if there is any data worth saving
-    const charDescription = typeof globalCharacter === 'object' ? globalCharacter.description : globalCharacter;
+    const charDescription = activeCharacter?.description || '';
     const hasData = script.trim() || charDescription?.trim() || narrativeArc.trim() || scenes.length > 0;
     if (!hasData) return;
 
@@ -188,7 +234,7 @@ export default function App() {
           const res = await fetch(`${API}/api/sessions`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
+            body: JSON.stringify({ script, globalCharacter: activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
           });
           const data = await res.json();
           if (data.sessionId) {
@@ -204,7 +250,7 @@ export default function App() {
           await fetch(`${API}/api/sessions/${sessionId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, globalCharacter, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
+            body: JSON.stringify({ script, globalCharacter: activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
           });
         }
       } catch (err) {
@@ -213,7 +259,7 @@ export default function App() {
     }, 1500);
 
     return () => clearTimeout(timeout);
-  }, [script, globalCharacter, narrativeArc, scenes, mergedVideo, sessionId, isInitializing]);
+  }, [script, activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage, sessionId, isInitializing]);
 
   const updateScene = useCallback((id, updates) => {
     setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
@@ -234,6 +280,8 @@ export default function App() {
       dialogue: { text: '', tone: 'calm and deliberate', pacing: 'slow with natural pauses', language: 'Hindi' },
       duration: 8,
       status: 'draft',
+      selectedCharacterId: '',
+      selectedEnvironmentId: '',
     };
     setScenes(prev => {
       const next = [...prev];
@@ -263,7 +311,8 @@ export default function App() {
       setAutoRunProgress({});
       setScript('');
       setScenes([]);
-      setGlobalCharacter('');
+      setGlobalCharacters([]);
+      setPrimaryCharacterId('');
       setNarrativeArc('');
       setMergedVideo(null);
       setSessionId(null);
@@ -316,9 +365,17 @@ export default function App() {
       const r = await fetch(`${API}/api/scenes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ script, sceneCount }) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      setGlobalCharacter(d.character || '');
+      const extractedCharacters = normalizeCharacters(d.characters || d.character);
+      setGlobalCharacters(extractedCharacters);
+      setPrimaryCharacterId(extractedCharacters[0]?.id || '');
       setNarrativeArc(d.narrativeArc || '');
-      setScenes(d.scenes.map(s => ({ ...s, status: 'draft', id: s.id || Math.random().toString(36).substr(2, 9) })));
+      setScenes(d.scenes.map(s => ({
+        ...s,
+        status: 'draft',
+        id: s.id || Math.random().toString(36).substr(2, 9),
+        selectedCharacterId: s.selectedCharacterId || '',
+        selectedEnvironmentId: s.selectedEnvironmentId || '',
+      })));
       setMergedVideo(null);
       setAutoRunStage('idle');
       setAutoRunProgress({});
@@ -333,7 +390,7 @@ export default function App() {
     setAutoRunProgress({});
     setMergedVideo(null);
 
-    const body = JSON.stringify({ scenes, globalCharacter, globalEnvironments, targetLanguage, sessionId });
+    const body = JSON.stringify({ scenes, globalCharacter: activeCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId });
     fetch(`${API}/api/auto-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
       .then(async (res) => {
         const reader = res.body.getReader();
@@ -345,7 +402,9 @@ export default function App() {
           try {
             const ev = JSON.parse(line.slice(6));
             handleSSEEvent(ev);
-          } catch {}
+          } catch {
+            // Ignore malformed SSE fragments and keep stream processing alive.
+          }
         };
 
         const pump = async () => {
@@ -419,7 +478,7 @@ export default function App() {
   const handleReset = () => {
     if (!window.confirm('Start a new session? Your current progress will be lost if not saved.')) return;
     handleStopAutoRun();
-    setScript(''); setScenes([]); setGlobalCharacter(''); setNarrativeArc(''); setMergedVideo(null);
+    setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
     window.localStorage.clear();
     setSessionId(null);
     window.history.replaceState({}, '', window.location.pathname);
@@ -557,8 +616,10 @@ export default function App() {
         {/* Character + Environments Panels */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <CharacterPanel
-            character={globalCharacter}
-            onUpdate={setGlobalCharacter}
+            characters={globalCharacters}
+            onUpdate={setGlobalCharacters}
+            primaryCharacterId={primaryCharacterId}
+            onSetPrimary={setPrimaryCharacterId}
             script={script}
           />
           <EnvironmentsPanel
@@ -616,7 +677,8 @@ export default function App() {
                   scene={scene}
                   index={i}
                   updateScene={updateScene}
-                  globalCharacter={globalCharacter}
+                  globalCharacter={activeCharacter}
+                  globalCharacters={globalCharacters}
                   globalEnvironments={globalEnvironments}
                   targetLanguage={targetLanguage}
                   previousSceneImage={i > 0 ? (scenes[i-1].imageUrl || '') : ''}

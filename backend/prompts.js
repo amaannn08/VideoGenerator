@@ -72,18 +72,25 @@ ${script}
 // ─────────────────────────────────────────────────────────────────────────────
 
 function getCharacterExtractPrompt(script) {
-  return `You are a casting director and visual development artist. Read the script below and extract the PRIMARY character.
+  return `You are a casting director and visual development artist. Read the script below and extract all DISTINCT characters who appear in the story.
 
 Rules:
-1. "name" — the character's name as written in the script.
-2. "description" — full physical description: skin tone, build, approximate age, exact attire with fabric/color/condition, hair, and any distinguishing features. Write this as a dense, single paragraph that can be copy-pasted verbatim into an image generation prompt.
-3. "keyFeature" — ONE visually identifying phrase, 5–10 words max, that makes this character instantly recognisable across frames. This must be a specific physical detail, NOT an emotion. Examples: "deep battle scar across left jaw, hollow dark eyes" / "silver-streaked long hair, worn monk's robes". Do NOT use personality traits or emotional states.
+1. Return an array called "characters".
+2. Include only unique characters (no duplicates).
+3. "name" — the character's name as written in the script. If unknown, infer a short role label.
+4. "description" — full physical description: skin tone, build, approximate age, exact attire with fabric/color/condition, hair, and any distinguishing features. Write this as a dense, single paragraph that can be copy-pasted verbatim into an image generation prompt.
+5. "keyFeature" — ONE visually identifying phrase, 5–10 words max, that makes this character instantly recognisable across frames. This must be a specific physical detail, NOT an emotion. Examples: "deep battle scar across left jaw, hollow dark eyes" / "silver-streaked long hair, worn monk's robes". Do NOT use personality traits or emotional states.
+6. If only one clear character exists, return a one-item array.
 
 Output ONLY valid JSON. No markdown, no explanation.
 {
-  "name": "...",
-  "description": "...",
-  "keyFeature": "..."
+  "characters": [
+    {
+      "name": "...",
+      "description": "...",
+      "keyFeature": "..."
+    }
+  ]
 }
 
 SCRIPT:
