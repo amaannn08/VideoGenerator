@@ -32,7 +32,7 @@ function Modal({ isOpen, onClose, title, children }) {
 
 const STAGES = ['draft', 'generating_image_prompt', 'image_prompt_ready', 'image_generating', 'image_done', 'generating_video_prompt', 'video_prompt_ready', 'video_generating', 'video_done'];
 
-const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter }) => {
+const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl }) => {
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
@@ -52,6 +52,8 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
   const [vidCustomInstruction, setVidCustomInstruction] = useState(scene.vidCustomInstruction || '');
   const [scenePromptInput, setScenePromptInput] = useState('');
   const [generatingScene, setGeneratingScene] = useState(false);
+  const [isRefreshingImage, setIsRefreshingImage] = useState(false);
+  const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
@@ -71,6 +73,32 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
 
   const abort = () => { if (abortRef.current) abortRef.current.abort(); };
   const signal = () => { abort(); abortRef.current = new AbortController(); return abortRef.current.signal; };
+
+  const refreshImageUrl = async () => {
+    if (!scene.imageUrl || isRefreshingImage || !refreshMediaUrl) return;
+    setIsRefreshingImage(true);
+    try {
+      const freshUrl = await refreshMediaUrl(scene.imageUrl);
+      if (freshUrl && freshUrl !== scene.imageUrl) {
+        updateScene(scene.id, { imageUrl: freshUrl });
+      }
+    } finally {
+      setIsRefreshingImage(false);
+    }
+  };
+
+  const refreshVideoUrl = async () => {
+    if (!scene.videoUrl || isRefreshingVideo || !refreshMediaUrl) return;
+    setIsRefreshingVideo(true);
+    try {
+      const freshUrl = await refreshMediaUrl(scene.videoUrl);
+      if (freshUrl && freshUrl !== scene.videoUrl) {
+        updateScene(scene.id, { videoUrl: freshUrl });
+      }
+    } finally {
+      setIsRefreshingVideo(false);
+    }
+  };
 
   const handleStop = () => {
     abort();
@@ -385,7 +413,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
               <div className="flex-1 flex flex-col min-h-0">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block text-center">Storyboard Frame</label>
                 <div className="bg-white rounded-3xl p-4 flex justify-center relative shadow-2xl border border-gray-100 flex-1 min-h-0">
-                  <img src={getMediaUrl(scene.imageUrl)} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
+                  <img src={getMediaUrl(scene.imageUrl)} onError={refreshImageUrl} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
                   <button onClick={genImage} disabled={isGenerating} className="absolute bottom-6 right-6 bg-white/95 text-xs px-4 py-2 rounded-full shadow-xl font-black text-gray-800 hover:scale-110 transition-transform flex items-center gap-2"><RefreshCw className="w-3 h-3" /> Re-Render</button>
                 </div>
               </div>
@@ -477,7 +505,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             </div>
             {scene.imageUrl && !hasVid && (
               <div className="flex-1 flex flex-col bg-white border-2 border-gray-50 rounded-3xl p-4 items-center justify-center shadow-sm min-h-0">
-                <img src={getMediaUrl(scene.imageUrl)} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
+                <img src={getMediaUrl(scene.imageUrl)} onError={refreshImageUrl} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
                 <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Master Frame</div>
               </div>
             )}
@@ -485,7 +513,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, previousSc
             <div className="flex-1 flex flex-col min-h-0 min-w-0 space-y-2">
               <label className="text-xs font-black text-gray-400 uppercase tracking-widest block text-center">Final Video Render</label>
               <div className="bg-black rounded-3xl overflow-hidden shadow-2xl border-8 border-gray-900 flex-1 min-h-0">
-                <video src={getMediaUrl(scene.videoUrl)} controls autoPlay loop className="w-full h-full object-contain" />
+                <video src={getMediaUrl(scene.videoUrl)} onError={refreshVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
               </div>
             </div>
           )}

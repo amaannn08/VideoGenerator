@@ -46,3 +46,26 @@ export async function uploadToS3(localPath, mimeType, prefix = 'misc') {
     throw error;
   }
 }
+
+export function extractS3KeyFromUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  if (!url.startsWith('http')) return null;
+
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname || '';
+    if (!pathname || pathname === '/') return null;
+    return decodeURIComponent(pathname.replace(/^\/+/, ''));
+  } catch {
+    return null;
+  }
+}
+
+export async function getPresignedReadUrlForKey(key) {
+  if (!key) throw new Error('S3 key is required');
+  return getSignedUrl(
+    s3Client,
+    new GetObjectCommand({ Bucket: BUCKET_NAME, Key: key }),
+    { expiresIn: PRESIGNED_TTL_SECONDS }
+  );
+}

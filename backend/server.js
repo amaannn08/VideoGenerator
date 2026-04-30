@@ -12,7 +12,7 @@ import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
 import { initDb, query } from './db.js';
 import { GoogleGenAI } from '@google/genai';
-import { uploadToS3 } from './s3.js';
+import { uploadToS3, extractS3KeyFromUrl, getPresignedReadUrlForKey } from './s3.js';
 dotenv.config();
 
 // Render deployment: decode base64 credentials to a temp file
@@ -875,6 +875,57 @@ app.put('/api/sessions/:id', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating session:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 8. MEDIA URL REFRESH (S3 presigned URL rotation)
+// ─────────────────────────────────────────────────────────────────────────────
+
+app.post('/api/media/refresh', async (req, res) => {
+  try {
+    const { url } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'url is required' });
+    }
+
+    const key = extractS3KeyFromUrl(url);
+    if (!key) {
+      return res.status(400).json({ error: 'Could not extract S3 key from URL' });
+    }
+
+    const signedUrl = await getPresignedReadUrlForKey(key);
+    res.json({ url: signedUrl });
+  } catch (error) {
+    console.error('Error refreshing media URL:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
+  }
+});
+
+app.post('/api/media/refresh-batch', async (req, res) => {
+  try {
+    const { urls } = req.body;
+    if (!Array.isArray(urls)) {
+      return res.status(400).json({ error: 'urls array is required' });
+    }
+
+    const uniqueUrls = [...new Set(urls.filter(u => typeof u === 'string' && u.startsWith('http')))];
+    const refreshed = {};
+
+    await Promise.all(uniqueUrls.map(async (url) => {
+      try {
+        const key = extractS3KeyFromUrl(url);
+        if (!key) return;
+        refreshed[url] = await getPresignedReadUrlForKey(key);
+      } catch (err) {
+        console.warn(`[Media refresh] Failed for URL: ${url}. ${getErrorMessage(err)}`);
+      }
+    }));
+
+    res.json({ urls: refreshed });
+  } catch (error) {
+    console.error('Error refreshing media URLs in batch:', error);
     res.status(500).json({ error: getErrorMessage(error) });
   }
 });

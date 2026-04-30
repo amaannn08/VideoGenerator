@@ -78,6 +78,62 @@ export default function App() {
   const [isInitializing, setIsInitializing] = useState(!!sessionId);
   const [allSessions, setAllSessions] = useState([]);
 
+  const refreshMediaUrl = useCallback(async (url) => {
+    if (!url || !url.startsWith('http')) return url;
+    try {
+      const r = await fetch(`${API}/api/media/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to refresh media URL');
+      return d.url || url;
+    } catch (err) {
+      console.error('Failed to refresh media URL:', err);
+      return url;
+    }
+  }, []);
+
+  const refreshSessionMediaUrls = useCallback(async (sessionData) => {
+    const sceneList = Array.isArray(sessionData?.scenes) ? sessionData.scenes : [];
+    const urls = [];
+
+    sceneList.forEach((scene) => {
+      if (scene?.imageUrl && scene.imageUrl.startsWith('http')) urls.push(scene.imageUrl);
+      if (scene?.videoUrl && scene.videoUrl.startsWith('http')) urls.push(scene.videoUrl);
+    });
+    if (sessionData?.mergedVideo && sessionData.mergedVideo.startsWith('http')) {
+      urls.push(sessionData.mergedVideo);
+    }
+
+    if (!urls.length) return sessionData;
+
+    try {
+      const r = await fetch(`${API}/api/media/refresh-batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ urls })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to refresh media URLs');
+      const refreshed = d.urls || {};
+
+      return {
+        ...sessionData,
+        scenes: sceneList.map((scene) => ({
+          ...scene,
+          imageUrl: refreshed[scene.imageUrl] || scene.imageUrl,
+          videoUrl: refreshed[scene.videoUrl] || scene.videoUrl,
+        })),
+        mergedVideo: refreshed[sessionData.mergedVideo] || sessionData.mergedVideo
+      };
+    } catch (err) {
+      console.error('Failed to refresh session media URLs:', err);
+      return sessionData;
+    }
+  }, []);
+
   useEffect(() => {
     fetch(`${API}/api/sessions`)
       .then(res => res.json())
@@ -89,13 +145,14 @@ export default function App() {
     if (sessionId) {
       fetch(`${API}/api/sessions/${sessionId}`)
         .then(res => res.json())
-        .then(data => {
+        .then(async (data) => {
           if (!data.error) {
-            setScript(data.script || '');
-            setGlobalCharacter(data.globalCharacter || '');
-            setNarrativeArc(data.narrativeArc || '');
-            setScenes(data.scenes || []);
-            setMergedVideo(data.mergedVideo || null);
+            const hydrated = await refreshSessionMediaUrls(data);
+            setScript(hydrated.script || '');
+            setGlobalCharacter(hydrated.globalCharacter || '');
+            setNarrativeArc(hydrated.narrativeArc || '');
+            setScenes(hydrated.scenes || []);
+            setMergedVideo(hydrated.mergedVideo || null);
           }
         })
         .catch(console.error)
@@ -103,7 +160,7 @@ export default function App() {
     } else {
       setIsInitializing(false);
     }
-  }, [sessionId]);
+  }, [sessionId, refreshSessionMediaUrls]);
 
   useEffect(() => {
     if (isInitializing) return;
@@ -489,6 +546,7 @@ export default function App() {
                   autoRunStage={autoRunStage}
                   onDelete={() => deleteScene(scene.id)}
                   onAddAfter={() => addScene(i)}
+                  refreshMediaUrl={refreshMediaUrl}
                 />
               ))}
             </div>
@@ -519,7 +577,16 @@ export default function App() {
                 </Btn>
               ) : (
                 <div className="w-full flex flex-col items-center gap-4">
-                  <video src={getMediaUrl(mergedVideo)} controls autoPlay className="w-full bg-black rounded-xl shadow-lg border border-gray-200" />
+                  <video
+                    src={getMediaUrl(mergedVideo)}
+                    onError={async () => {
+                      const freshUrl = await refreshMediaUrl(mergedVideo);
+                      if (freshUrl && freshUrl !== mergedVideo) setMergedVideo(freshUrl);
+                    }}
+                    controls
+                    autoPlay
+                    className="w-full bg-black rounded-xl shadow-lg border border-gray-200"
+                  />
                   <a href={getMediaUrl(mergedVideo)} download className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline text-sm">
                     <Download className="w-4 h-4" /> Download MP4
                   </a>
