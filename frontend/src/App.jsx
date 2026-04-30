@@ -156,6 +156,12 @@ export default function App() {
     sceneList.forEach((scene) => {
       if (scene?.imageUrl && scene.imageUrl.startsWith('http')) urls.push(scene.imageUrl);
       if (scene?.videoUrl && scene.videoUrl.startsWith('http')) urls.push(scene.videoUrl);
+      (scene?.imageGenerations || []).forEach((gen) => {
+        if (gen?.imageUrl && gen.imageUrl.startsWith('http')) urls.push(gen.imageUrl);
+      });
+      (scene?.videoGenerations || []).forEach((gen) => {
+        if (gen?.videoUrl && gen.videoUrl.startsWith('http')) urls.push(gen.videoUrl);
+      });
     });
     if (sessionData?.mergedVideo && sessionData.mergedVideo.startsWith('http')) {
       urls.push(sessionData.mergedVideo);
@@ -179,6 +185,14 @@ export default function App() {
           ...scene,
           imageUrl: refreshed[scene.imageUrl] || scene.imageUrl,
           videoUrl: refreshed[scene.videoUrl] || scene.videoUrl,
+          imageGenerations: (scene.imageGenerations || []).map((gen) => ({
+            ...gen,
+            imageUrl: refreshed[gen.imageUrl] || gen.imageUrl,
+          })),
+          videoGenerations: (scene.videoGenerations || []).map((gen) => ({
+            ...gen,
+            videoUrl: refreshed[gen.videoUrl] || gen.videoUrl,
+          })),
         })),
         mergedVideo: refreshed[sessionData.mergedVideo] || sessionData.mergedVideo
       };
@@ -434,7 +448,16 @@ export default function App() {
       if (status === 'done' && data) {
         const updates = {};
         if (data.imagePrompt) updates.imagePrompt = data.imagePrompt;
-        if (data.imageUrl) { updates.imageUrl = data.imageUrl; updates.status = 'image_done'; }
+        if (data.imageUrl) {
+          const genId = Math.random().toString(36).substr(2, 9);
+          const prevGens = scenes.find(s => s.id === sceneId)?.imageGenerations || [];
+          updates.imageGenerations = [
+            ...prevGens.map(g => ({ ...g, isFinal: false })),
+            { id: genId, imageUrl: data.imageUrl, createdAt: Date.now(), isFinal: true },
+          ];
+          updates.imageUrl = data.imageUrl;
+          updates.status = 'image_done';
+        }
         if (data.videoPrompt) updates.videoPrompt = data.videoPrompt;
         if (data.videoUrl) { updates.videoUrl = data.videoUrl; updates.status = 'video_done'; }
         if (Object.keys(updates).length) updateScene(sceneId, updates);

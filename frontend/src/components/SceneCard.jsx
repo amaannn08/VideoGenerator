@@ -55,6 +55,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const [isRefreshingImage, setIsRefreshingImage] = useState(false);
   const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
   const [showGenerations, setShowGenerations] = useState(false);
+  const [showImageGenerations, setShowImageGenerations] = useState(false);
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
@@ -152,8 +153,34 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       const r = await fetch(`${API}/api/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imagePrompt: scene.imagePrompt, referenceImage: previousSceneImage }), signal: signal() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      updateScene(scene.id, { imageUrl: d.imageUrl, status: 'image_done' });
+      const genId = Math.random().toString(36).substr(2, 9);
+      const generation = { id: genId, imageUrl: d.imageUrl, createdAt: Date.now(), isFinal: true };
+      const prevGens = (scene.imageGenerations || []).map(g => ({ ...g, isFinal: false }));
+      updateScene(scene.id, {
+        imageGenerations: [...prevGens, generation],
+        imageUrl: d.imageUrl,
+        status: 'image_done',
+      });
     } catch (e) { if (e.name !== 'AbortError') { alert(e.message); updateScene(scene.id, { status: 'image_prompt_ready' }); } }
+  };
+
+  const setFinalImageGeneration = (genId) => {
+    const updated = (scene.imageGenerations || []).map(g => ({ ...g, isFinal: g.id === genId }));
+    const finalGen = updated.find(g => g.isFinal);
+    updateScene(scene.id, { imageGenerations: updated, imageUrl: finalGen?.imageUrl || scene.imageUrl });
+  };
+
+  const deleteImageGeneration = (genId) => {
+    const updated = (scene.imageGenerations || []).filter(g => g.id !== genId);
+    if (!updated.some(g => g.isFinal) && updated.length > 0) {
+      updated[updated.length - 1] = { ...updated[updated.length - 1], isFinal: true };
+    }
+    const finalGen = updated.find(g => g.isFinal);
+    updateScene(scene.id, {
+      imageGenerations: updated,
+      imageUrl: finalGen?.imageUrl || null,
+      status: updated.length === 0 ? 'image_prompt_ready' : 'image_done',
+    });
   };
 
   const genVidPrompt = async () => {
@@ -185,7 +212,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       const r = await fetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: scene.imageUrl, duration: scene.duration }),
+        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: activeImageUrl, duration: scene.duration }),
         signal: signal(),
       });
       const d = await r.json();
@@ -224,7 +251,10 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
 
   const isGenerating = status.includes('generating');
   const hasImgP = Boolean(scene.imagePrompt);
-  const hasImg = Boolean(scene.imageUrl);
+  const imageGenerations = scene.imageGenerations || [];
+  const finalImageGen = imageGenerations.find(g => g.isFinal);
+  const hasImg = Boolean(finalImageGen?.imageUrl || scene.imageUrl);
+  const activeImageUrl = finalImageGen?.imageUrl || scene.imageUrl || null;
   const hasVidP = Boolean(scene.videoPrompt);
   const videoGenerations = scene.videoGenerations || [];
   const finalGen = videoGenerations.find(g => g.isFinal);
@@ -497,16 +527,59 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               </div>
             </div>
 
-            {hasImgP && <Btn onClick={status === 'image_generating' ? handleStop : genImage} variant={status === 'image_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-auto shrink-0">{status === 'image_generating' ? <><Spinner size={18} color="border-white" />Stop</> : 'Generate Image'}</Btn>}
+            {hasImgP && <Btn onClick={status === 'image_generating' ? handleStop : genImage} variant={status === 'image_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-auto shrink-0">{status === 'image_generating' ? <><Spinner size={18} color="border-white" />Stop</> : imageGenerations.length > 0 ? 'Generate Another Attempt' : 'Generate Image'}</Btn>}
           </div>
           <div className="flex-1 flex flex-col min-w-[280px] min-h-0">
             {hasImg ? (
               <div className="flex-1 flex flex-col min-h-0">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block text-center">Storyboard Frame</label>
                 <div className="bg-white rounded-3xl p-4 flex justify-center relative shadow-2xl border border-gray-100 flex-1 min-h-0">
-                  <img src={getMediaUrl(scene.imageUrl)} onError={refreshImageUrl} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
+                  <img src={getMediaUrl(activeImageUrl)} onError={refreshImageUrl} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
                   <button onClick={genImage} disabled={isGenerating} className="absolute bottom-6 right-6 bg-white/95 text-xs px-4 py-2 rounded-full shadow-xl font-black text-gray-800 hover:scale-110 transition-transform flex items-center gap-2"><RefreshCw className="w-3 h-3" /> Re-Render</button>
                 </div>
+                {imageGenerations.length > 0 && (
+                  <div className="mt-3 border border-gray-200 rounded-2xl overflow-hidden">
+                    <button
+                      onClick={() => setShowImageGenerations(o => !o)}
+                      className="w-full px-3 py-2.5 flex items-center justify-between bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <span className="text-[11px] font-black text-gray-600 uppercase tracking-widest">Generations ({imageGenerations.length})</span>
+                      {showImageGenerations ? <ChevronUp className="w-3.5 h-3.5 text-gray-400" /> : <ChevronDown className="w-3.5 h-3.5 text-gray-400" />}
+                    </button>
+                    {showImageGenerations && (
+                      <div className="p-2 space-y-2 max-h-[300px] overflow-y-auto">
+                        {imageGenerations.map((gen, gi) => (
+                          <div key={gen.id} className={`border rounded-xl overflow-hidden ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                            <div className="flex items-center justify-between px-2.5 py-1.5">
+                              <span className="text-[10px] font-bold text-gray-500">Attempt {gi + 1}</span>
+                              <div className="flex items-center gap-1">
+                                {gen.isFinal ? (
+                                  <span className="flex items-center gap-1 text-[10px] font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                                    <Check className="w-2.5 h-2.5" strokeWidth={3} /> Final
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => setFinalImageGeneration(gen.id)}
+                                    className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition-colors"
+                                  >
+                                    Set Final
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => { if (window.confirm('Delete this image generation?')) deleteImageGeneration(gen.id); }}
+                                  className="w-5 h-5 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                            <img src={getMediaUrl(gen.imageUrl)} alt={`Attempt ${gi + 1}`} className="w-full max-h-[180px] object-contain bg-black" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ) : <div className="flex-1 flex items-center justify-center border-2 border-dashed border-indigo-200 rounded-2xl text-gray-400 text-sm">Generate the image to preview it here</div>}
           </div>
@@ -647,9 +720,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                 </>
               )}
             </div>
-            {scene.imageUrl && !hasVid && (
+            {activeImageUrl && !hasVid && (
               <div className="flex-1 flex flex-col bg-white border-2 border-gray-50 rounded-3xl p-4 items-center justify-center shadow-sm min-h-0">
-                <img src={getMediaUrl(scene.imageUrl)} onError={refreshImageUrl} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
+                <img src={getMediaUrl(activeImageUrl)} onError={refreshImageUrl} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
                 <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Master Frame</div>
               </div>
             )}
