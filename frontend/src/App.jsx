@@ -85,8 +85,15 @@ export default function App() {
   const [allSessions, setAllSessions]                 = useState([]);
   const [activeTab, setActiveTab]                     = useState('script');
   const [activeSceneId, setActiveSceneId]             = useState(null);
+  const [activeCharId, setActiveCharId]               = useState(null);
+  const [activeEnvId, setActiveEnvId]                 = useState(null);
 
-  const handleTabChange = (tab) => { setActiveTab(tab); if (tab !== 'scenes') setActiveSceneId(null); };
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab !== 'scenes') setActiveSceneId(null);
+    if (tab !== 'characters') setActiveCharId(null);
+    if (tab !== 'environments') setActiveEnvId(null);
+  };
 
   // ── Legacy character migration ─────────────────────────────────────────
   useEffect(() => {
@@ -409,6 +416,8 @@ export default function App() {
             primaryCharacterId={primaryCharacterId}
             onSetPrimary={setPrimaryCharacterId}
             script={script}
+            activeCharId={activeCharId}
+            onCharSelect={setActiveCharId}
           />
         );
       case 'environments':
@@ -417,6 +426,8 @@ export default function App() {
             environments={globalEnvironments}
             onUpdate={setGlobalEnvironments}
             script={script}
+            activeEnvId={activeEnvId}
+            onEnvSelect={setActiveEnvId}
           />
         );
       case 'reel':
@@ -474,6 +485,12 @@ export default function App() {
           scenes={scenes}
           activeSceneId={activeSceneId}
           onSceneSelect={setActiveSceneId}
+          characters={globalCharacters}
+          activeCharId={activeCharId}
+          onCharSelect={setActiveCharId}
+          environments={globalEnvironments}
+          activeEnvId={activeEnvId}
+          onEnvSelect={setActiveEnvId}
         />
 
         <main className="main-content">
