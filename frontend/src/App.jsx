@@ -1,643 +1,405 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Link2, RotateCcw, LogOut, Film, Play, Check, Download, Plus, ArrowRight, Trash2 } from 'lucide-react';
-import SceneCard from './components/SceneCard';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import Topbar from './components/layout/Topbar';
+import Sidebar from './components/layout/Sidebar';
+import PipelineBar from './components/layout/PipelineBar';
+import ScriptPanel from './components/ScriptPanel';
+import ScenesView from './components/ScenesView';
 import CharacterPanel from './components/CharacterPanel';
 import EnvironmentsPanel from './components/EnvironmentsPanel';
 import Login from './components/Login';
+import ReelView from './components/ReelView';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
-function Spinner({ size = 14, color = 'border-indigo-600' }) {
-  return <div style={{ width: size, height: size }} className={`rounded-full border-2 ${color} border-t-transparent animate-spin flex-shrink-0`} />;
-}
-
-function Btn({ onClick, disabled, loading, children, variant = 'primary', className = '' }) {
-  const base = 'inline-flex justify-center items-center gap-2 font-semibold text-sm px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed';
-  const v = { primary: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm', ghost: 'bg-white text-gray-700 border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 shadow-sm', danger: 'bg-red-500 text-white hover:bg-red-600 shadow-sm', success: 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-sm' };
-  return <button onClick={onClick} disabled={disabled || loading} className={`${base} ${v[variant] || v.primary} ${className}`}>{loading && <Spinner size={14} color={variant === 'primary' || variant === 'danger' || variant === 'success' ? 'border-white' : 'border-indigo-600'} />}{children}</button>;
-}
-
-function useLocalStorage(key, init) {
-  const [val, setVal] = useState(() => { try { const x = window.localStorage.getItem(key); return x ? JSON.parse(x) : init; } catch { return init; } });
-  const set = useCallback((v) => { setVal(prev => { const nv = typeof v === 'function' ? v(prev) : v; return nv; }); }, []);
-  useEffect(() => { const t = setTimeout(() => { try { window.localStorage.setItem(key, JSON.stringify(val)); } catch { /* Ignore localStorage write failures. */ } }, 500); return () => clearTimeout(t); }, [key, val]);
-  return [val, set];
-}
-
-const PIPELINE_STAGES = [
-  { key: 'script', label: 'Script' },
-  { key: 'image_prompt', label: 'Img Prompts' },
-  { key: 'image', label: 'Images' },
-  { key: 'video_prompt', label: 'Vid Prompts' },
-  { key: 'video', label: 'Videos' },
-  { key: 'merge', label: 'Merged' },
-];
-
-const EMPTY_CHARACTER = { id: '', name: '', description: '', keyFeature: '', referenceImageUrl: null };
+const EMPTY_CHARACTER = { id:'', name:'', description:'', keyFeature:'', referenceImageUrl:null };
 
 function normalizeCharacters(input) {
   const list = Array.isArray(input) ? input : [input];
   return list
-    .filter(item => item && (typeof item === 'object' || typeof item === 'string'))
-    .map((item, idx) => {
-      if (typeof item === 'string') {
-        return { ...EMPTY_CHARACTER, id: `char_${idx + 1}`, description: item };
-      }
-      return {
-        id: item.id || `char_${idx + 1}`,
-        name: item.name || '',
-        description: item.description || '',
-        keyFeature: item.keyFeature || '',
-        referenceImageUrl: item.referenceImageUrl || null,
-      };
+    .filter(item => item && (typeof item==='object' || typeof item==='string'))
+    .map((item,idx) => {
+      if (typeof item==='string') return {...EMPTY_CHARACTER, id:`char_${idx+1}`, description:item};
+      return { id:item.id||`char_${idx+1}`, name:item.name||'', description:item.description||'', keyFeature:item.keyFeature||'', referenceImageUrl:item.referenceImageUrl||null };
     })
-    .filter(item => item.name || item.description || item.keyFeature);
+    .filter(item => item.name||item.description||item.keyFeature);
+}
+
+function useLocalStorage(key, init) {
+  const [val, setVal] = useState(() => { try { const x=window.localStorage.getItem(key); return x?JSON.parse(x):init; } catch { return init; } });
+  const set = useCallback((v) => { setVal(prev => typeof v==='function' ? v(prev) : v); }, []);
+  useEffect(() => { const t=setTimeout(()=>{ try { window.localStorage.setItem(key,JSON.stringify(val)); } catch {} }, 500); return ()=>clearTimeout(t); }, [key,val]);
+  return [val, set];
+}
+
+function Loader({ label }) {
+  return (
+    <div style={{ minHeight:'100vh', background:'var(--bg-base)', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:14 }}>
+      <div style={{ width:28, height:28, borderRadius:'50%', border:'2px solid var(--amber)', borderTopColor:'transparent', animation:'spin 0.7s linear infinite' }} />
+      <p style={{ fontSize:13, color:'var(--text-muted)' }}>{label}</p>
+    </div>
+  );
 }
 
 export default function App() {
-  // ── Auth ──────────────────────────────────────────────────────────────────
+  // ── Auth ─────────────────────────────────────────────────────────────────
   const [authToken, setAuthToken] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('ai-video-token');
-    const exp = parseInt(localStorage.getItem('ai-video-token-exp') || '0', 10);
+    const exp = parseInt(localStorage.getItem('ai-video-token-exp')||'0', 10);
     if (!token || Date.now() > exp) {
       localStorage.removeItem('ai-video-token');
       localStorage.removeItem('ai-video-token-exp');
       setAuthChecked(true);
       return;
     }
-    fetch(`${API}/api/auth/verify`, { headers: { 'x-auth-token': token } })
-      .then(r => r.json())
-      .then(d => {
-        if (d.valid) setAuthToken(token);
-        else {
-          localStorage.removeItem('ai-video-token');
-          localStorage.removeItem('ai-video-token-exp');
-        }
-      })
+    fetch(`${API}/api/auth/verify`, { headers:{'x-auth-token':token} })
+      .then(r=>r.json())
+      .then(d => { if (d.valid) setAuthToken(token); else { localStorage.removeItem('ai-video-token'); localStorage.removeItem('ai-video-token-exp'); } })
       .catch(() => { if (Date.now() < exp) setAuthToken(token); })
       .finally(() => setAuthChecked(true));
   }, []);
 
-  // ── App state — ALL hooks declared before any early return ────────────────
-  const [globalCharacters, setGlobalCharacters] = useLocalStorage('ai-video-characters', []);
-  const [primaryCharacterId, setPrimaryCharacterId] = useLocalStorage('ai-video-primary-character-id', '');
-  const [globalEnvironments, setGlobalEnvironments] = useLocalStorage('ai-video-environments', []);
-  const [targetLanguage, setTargetLanguage] = useLocalStorage('ai-video-lang', 'Hindi');
-  const [narrativeArc, setNarrativeArc] = useLocalStorage('ai-video-arc', '');
-  const [script, setScript] = useLocalStorage('ai-video-script', '');
-  const [sceneCount, setSceneCount] = useLocalStorage('ai-video-scenecount', 3);
-  const [scenes, setScenes] = useLocalStorage('ai-video-scenes', []);
-  const [mergedVideo, setMergedVideo] = useLocalStorage('ai-video-merged', null);
+  // ── Persistent state ───────────────────────────────────────────────────
+  const [globalCharacters, setGlobalCharacters]       = useLocalStorage('ai-video-characters', []);
+  const [primaryCharacterId, setPrimaryCharacterId]   = useLocalStorage('ai-video-primary-character-id', '');
+  const [globalEnvironments, setGlobalEnvironments]   = useLocalStorage('ai-video-environments', []);
+  const [targetLanguage, setTargetLanguage]           = useLocalStorage('ai-video-lang', 'Hindi');
+  const [narrativeArc, setNarrativeArc]               = useLocalStorage('ai-video-arc', '');
+  const [script, setScript]                           = useLocalStorage('ai-video-script', '');
+  const [sceneCount, setSceneCount]                   = useLocalStorage('ai-video-scenecount', 3);
+  const [scenes, setScenes]                           = useLocalStorage('ai-video-scenes', []);
+  const [mergedVideo, setMergedVideo]                 = useLocalStorage('ai-video-merged', null);
 
-  const [loadingScenes, setLoadingScenes] = useState(false);
-  const [merging, setMerging] = useState(false);
-  const [autoRunStage, setAutoRunStage] = useState('idle');
+  // ── Transient state ────────────────────────────────────────────────────
+  const [loadingScenes, setLoadingScenes]             = useState(false);
+  const [merging, setMerging]                         = useState(false);
+  const [autoRunStage, setAutoRunStage]               = useState('idle');
   const [autoRunCurrentScene, setAutoRunCurrentScene] = useState(null);
-  const [, setAutoRunProgress] = useState({});
-  const sseRef = useRef(null);
+  const [, setAutoRunProgress]                        = useState({});
+  const sseRef                                        = useRef(null);
+  const [sessionId, setSessionId]                     = useState(() => new URLSearchParams(window.location.search).get('session'));
+  const [isInitializing, setIsInitializing]           = useState(!!new URLSearchParams(window.location.search).get('session'));
+  const [allSessions, setAllSessions]                 = useState([]);
+  const [activeTab, setActiveTab]                     = useState('script');
 
-  const [sessionId, setSessionId] = useState(() => new URLSearchParams(window.location.search).get('session'));
-  const [isInitializing, setIsInitializing] = useState(!!sessionId);
-  const [allSessions, setAllSessions] = useState([]);
-
+  // ── Legacy character migration ─────────────────────────────────────────
   useEffect(() => {
     if (globalCharacters.length) return;
     try {
       const legacy = window.localStorage.getItem('ai-video-character');
       if (!legacy) return;
-      const parsed = JSON.parse(legacy);
-      const migrated = normalizeCharacters(parsed);
-      if (migrated.length) {
-        setGlobalCharacters(migrated);
-        setPrimaryCharacterId(migrated[0].id);
-      }
-    } catch {
-      // Ignore legacy parse issues and continue with clean state.
-    }
+      const migrated = normalizeCharacters(JSON.parse(legacy));
+      if (migrated.length) { setGlobalCharacters(migrated); setPrimaryCharacterId(migrated[0].id); }
+    } catch {}
   }, [globalCharacters.length, setGlobalCharacters, setPrimaryCharacterId]);
 
+  // ── Keep primary in sync ───────────────────────────────────────────────
   useEffect(() => {
-    if (!globalCharacters.length) {
-      if (primaryCharacterId) setPrimaryCharacterId('');
-      return;
-    }
-    if (!primaryCharacterId || !globalCharacters.some(c => c.id === primaryCharacterId)) {
-      setPrimaryCharacterId(globalCharacters[0].id);
-    }
+    if (!globalCharacters.length) { if (primaryCharacterId) setPrimaryCharacterId(''); return; }
+    if (!primaryCharacterId || !globalCharacters.some(c=>c.id===primaryCharacterId)) setPrimaryCharacterId(globalCharacters[0].id);
   }, [globalCharacters, primaryCharacterId, setPrimaryCharacterId]);
 
-  const activeCharacter = globalCharacters.find(c => c.id === primaryCharacterId) || globalCharacters[0] || EMPTY_CHARACTER;
+  const activeCharacter = globalCharacters.find(c=>c.id===primaryCharacterId) || globalCharacters[0] || EMPTY_CHARACTER;
 
+  // ── Media refresh helpers ──────────────────────────────────────────────
   const refreshMediaUrl = useCallback(async (url) => {
     if (!url || !url.startsWith('http')) return url;
     try {
-      const r = await fetch(`${API}/api/media/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
-      });
+      const r = await fetch(`${API}/api/media/refresh`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}) });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Failed to refresh media URL');
+      if (!r.ok) throw new Error(d.error);
       return d.url || url;
-    } catch (err) {
-      console.error('Failed to refresh media URL:', err);
-      return url;
-    }
+    } catch { return url; }
   }, []);
 
   const refreshSessionMediaUrls = useCallback(async (sessionData) => {
     const sceneList = Array.isArray(sessionData?.scenes) ? sessionData.scenes : [];
     const urls = [];
-
-    sceneList.forEach((scene) => {
-      if (scene?.imageUrl && scene.imageUrl.startsWith('http')) urls.push(scene.imageUrl);
-      if (scene?.videoUrl && scene.videoUrl.startsWith('http')) urls.push(scene.videoUrl);
-      (scene?.imageGenerations || []).forEach((gen) => {
-        if (gen?.imageUrl && gen.imageUrl.startsWith('http')) urls.push(gen.imageUrl);
-      });
-      (scene?.videoGenerations || []).forEach((gen) => {
-        if (gen?.videoUrl && gen.videoUrl.startsWith('http')) urls.push(gen.videoUrl);
-      });
+    sceneList.forEach(scene => {
+      if (scene?.imageUrl?.startsWith('http')) urls.push(scene.imageUrl);
+      if (scene?.videoUrl?.startsWith('http')) urls.push(scene.videoUrl);
+      (scene?.imageGenerations||[]).forEach(g => { if (g?.imageUrl?.startsWith('http')) urls.push(g.imageUrl); });
+      (scene?.videoGenerations||[]).forEach(g => { if (g?.videoUrl?.startsWith('http')) urls.push(g.videoUrl); });
     });
-    if (sessionData?.mergedVideo && sessionData.mergedVideo.startsWith('http')) {
-      urls.push(sessionData.mergedVideo);
-    }
-
+    if (sessionData?.mergedVideo?.startsWith('http')) urls.push(sessionData.mergedVideo);
     if (!urls.length) return sessionData;
-
     try {
-      const r = await fetch(`${API}/api/media/refresh-batch`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ urls })
-      });
+      const r = await fetch(`${API}/api/media/refresh-batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({urls}) });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Failed to refresh media URLs');
+      if (!r.ok) throw new Error(d.error);
       const refreshed = d.urls || {};
-
       return {
         ...sessionData,
-        scenes: sceneList.map((scene) => ({
+        scenes: sceneList.map(scene => ({
           ...scene,
-          imageUrl: refreshed[scene.imageUrl] || scene.imageUrl,
-          videoUrl: refreshed[scene.videoUrl] || scene.videoUrl,
-          imageGenerations: (scene.imageGenerations || []).map((gen) => ({
-            ...gen,
-            imageUrl: refreshed[gen.imageUrl] || gen.imageUrl,
-          })),
-          videoGenerations: (scene.videoGenerations || []).map((gen) => ({
-            ...gen,
-            videoUrl: refreshed[gen.videoUrl] || gen.videoUrl,
-          })),
+          imageUrl: refreshed[scene.imageUrl]||scene.imageUrl,
+          videoUrl: refreshed[scene.videoUrl]||scene.videoUrl,
+          imageGenerations: (scene.imageGenerations||[]).map(g=>({...g, imageUrl:refreshed[g.imageUrl]||g.imageUrl})),
+          videoGenerations: (scene.videoGenerations||[]).map(g=>({...g, videoUrl:refreshed[g.videoUrl]||g.videoUrl})),
         })),
-        mergedVideo: refreshed[sessionData.mergedVideo] || sessionData.mergedVideo
+        mergedVideo: refreshed[sessionData.mergedVideo]||sessionData.mergedVideo,
       };
-    } catch (err) {
-      console.error('Failed to refresh session media URLs:', err);
-      return sessionData;
-    }
+    } catch { return sessionData; }
   }, []);
 
+  // ── Fetch sessions list ────────────────────────────────────────────────
   useEffect(() => {
+    if (!authToken) return;
     fetch(`${API}/api/sessions`)
-      .then(res => res.json())
-      .then(data => { if (data.sessions) setAllSessions(data.sessions); })
+      .then(r=>r.json())
+      .then(d=>{ if(d.sessions) setAllSessions(d.sessions); })
       .catch(console.error);
-  }, [sessionId, narrativeArc]);
+  }, [sessionId, narrativeArc, authToken]);
 
+  // ── Load session ───────────────────────────────────────────────────────
   useEffect(() => {
-    if (sessionId) {
-      fetch(`${API}/api/sessions/${sessionId}`)
-        .then(res => res.json())
-        .then(async (data) => {
-          if (!data.error) {
-            const hydrated = await refreshSessionMediaUrls(data);
-            setScript(hydrated.script || '');
-            const chars = normalizeCharacters(hydrated.globalCharacters || hydrated.globalCharacter);
-            setGlobalCharacters(chars);
-            setPrimaryCharacterId(chars[0]?.id || '');
-            setGlobalEnvironments(hydrated.globalEnvironments || []);
-            setTargetLanguage(hydrated.targetLanguage || 'Hindi');
-            setNarrativeArc(hydrated.narrativeArc || '');
-            setScenes(hydrated.scenes || []);
-            setMergedVideo(hydrated.mergedVideo || null);
-          }
-        })
-        .catch(console.error)
-        .finally(() => setIsInitializing(false));
-    } else {
-      setIsInitializing(false);
-    }
-  }, [sessionId, refreshSessionMediaUrls, setGlobalCharacters, setPrimaryCharacterId, setGlobalEnvironments, setTargetLanguage, setNarrativeArc, setScenes, setMergedVideo, setScript]);
+    if (!sessionId) { setIsInitializing(false); return; }
+    fetch(`${API}/api/sessions/${sessionId}`)
+      .then(r=>r.json())
+      .then(async data => {
+        if (!data.error) {
+          const hydrated = await refreshSessionMediaUrls(data);
+          setScript(hydrated.script||'');
+          const chars = normalizeCharacters(hydrated.globalCharacters||hydrated.globalCharacter);
+          setGlobalCharacters(chars);
+          setPrimaryCharacterId(chars[0]?.id||'');
+          setGlobalEnvironments(hydrated.globalEnvironments||[]);
+          setTargetLanguage(hydrated.targetLanguage||'Hindi');
+          setNarrativeArc(hydrated.narrativeArc||'');
+          setScenes(hydrated.scenes||[]);
+          setMergedVideo(hydrated.mergedVideo||null);
+          if ((hydrated.scenes||[]).length > 0) setActiveTab('scenes');
+        }
+      })
+      .catch(console.error)
+      .finally(() => setIsInitializing(false));
+  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Auto-save ──────────────────────────────────────────────────────────
   useEffect(() => {
     if (isInitializing) return;
-    
-    // Check if there is any data worth saving
-    const charDescription = activeCharacter?.description || '';
-    const hasData = script.trim() || charDescription?.trim() || narrativeArc.trim() || scenes.length > 0;
+    const hasData = script.trim() || activeCharacter?.description?.trim() || narrativeArc.trim() || scenes.length > 0;
     if (!hasData) return;
-
-    const timeout = setTimeout(async () => {
+    const t = setTimeout(async () => {
       try {
+        const body = JSON.stringify({ script, globalCharacter:activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage });
         if (!sessionId) {
-          const res = await fetch(`${API}/api/sessions`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, globalCharacter: activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
-          });
-          const data = await res.json();
-          if (data.sessionId) {
-            setSessionId(data.sessionId);
-            window.history.replaceState({}, '', '?session=' + data.sessionId);
-            // Refresh session list
-            fetch(`${API}/api/sessions`)
-              .then(res => res.json())
-              .then(d => { if (d.sessions) setAllSessions(d.sessions); })
-              .catch(console.error);
+          const res = await fetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+          const d = await res.json();
+          if (d.sessionId) {
+            setSessionId(d.sessionId);
+            window.history.replaceState({}, '', '?session='+d.sessionId);
+            fetch(`${API}/api/sessions`).then(r=>r.json()).then(d=>{ if(d.sessions) setAllSessions(d.sessions); }).catch(()=>{});
           }
         } else {
-          await fetch(`${API}/api/sessions/${sessionId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script, globalCharacter: activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage })
-          });
+          await fetch(`${API}/api/sessions/${sessionId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
         }
-      } catch (err) {
-        console.error('Auto-save error:', err);
-      }
+      } catch(err) { console.error('Auto-save error:', err); }
     }, 1500);
+    return () => clearTimeout(t);
+  }, [script, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage, sessionId, isInitializing]); // eslint-disable-line react-hooks/exhaustive-deps
 
-    return () => clearTimeout(timeout);
-  }, [script, activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage, sessionId, isInitializing]);
-
-  const updateScene = useCallback((id, updates) => {
-    setScenes(prev => prev.map(s => s.id === id ? { ...s, ...updates } : s));
+  // ── Scene helpers ──────────────────────────────────────────────────────
+  const updateScene  = useCallback((id, updates) => setScenes(prev=>prev.map(s=>s.id===id?{...s,...updates}:s)), [setScenes]);
+  const deleteScene  = useCallback((id) => setScenes(prev=>prev.filter(s=>s.id!==id)), [setScenes]);
+  const addScene     = useCallback((afterIndex) => {
+    const newScene = { id:Math.random().toString(36).substr(2,9), title:'', summary:'', location:'', timeOfDay:'', emotionalTone:'', dialogue:{text:'',tone:'calm and deliberate',pacing:'slow with natural pauses',language:'Hindi'}, duration:8, status:'draft', selectedCharacterId:'', selectedEnvironmentId:'' };
+    setScenes(prev => { const next=[...prev]; next.splice(afterIndex+1,0,newScene); return next; });
   }, [setScenes]);
 
-  const deleteScene = useCallback((id) => {
-    setScenes(prev => prev.filter(s => s.id !== id));
-  }, [setScenes]);
-
-  const addScene = useCallback((afterIndex) => {
-    const newScene = {
-      id: Math.random().toString(36).substr(2, 9),
-      title: '',
-      summary: '',
-      location: '',
-      timeOfDay: '',
-      emotionalTone: '',
-      dialogue: { text: '', tone: 'calm and deliberate', pacing: 'slow with natural pauses', language: 'Hindi' },
-      duration: 8,
-      status: 'draft',
-      selectedCharacterId: '',
-      selectedEnvironmentId: '',
-    };
-    setScenes(prev => {
-      const next = [...prev];
-      next.splice(afterIndex + 1, 0, newScene);
-      return next;
-    });
-  }, [setScenes]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('ai-video-token');
-    localStorage.removeItem('ai-video-token-exp');
-    setAuthToken(null);
-  };
-
-  const handleDeleteSession = async () => {
-    if (!sessionId) return;
-    if (!window.confirm('Delete this session permanently? This cannot be undone.')) return;
-
-    try {
-      const r = await fetch(`${API}/api/sessions/${sessionId}`, { method: 'DELETE' });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error || 'Failed to delete session');
-
-      if (sseRef.current) sseRef.current.close();
-      setAutoRunStage('idle');
-      setAutoRunCurrentScene(null);
-      setAutoRunProgress({});
-      setScript('');
-      setScenes([]);
-      setGlobalCharacters([]);
-      setPrimaryCharacterId('');
-      setNarrativeArc('');
-      setMergedVideo(null);
-      setSessionId(null);
-      setAllSessions(prev => prev.filter(s => s.id !== d.id));
-      window.history.replaceState({}, '', window.location.pathname);
-    } catch (err) {
-      alert(`Delete failed: ${err.message}`);
-    }
-  };
-
-  // ── Early returns (after ALL hooks) ───────────────────────────────────────
-  if (!authChecked) {
-    return (
-      <div className="min-h-screen bg-[#f0f1f6] flex items-center justify-center flex-col gap-4">
-        <div style={{ width: 32, height: 32 }} className="rounded-full border-2 border-indigo-600 border-t-transparent animate-spin" />
-        <p className="text-gray-500 font-semibold animate-pulse">Checking access…</p>
-      </div>
-    );
-  }
-
-  if (!authToken) return <Login onLogin={setAuthToken} />;
-
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen bg-[#f0f1f6] flex items-center justify-center flex-col gap-4">
-        <Spinner size={32} color="border-indigo-600" />
-        <p className="text-gray-500 font-semibold animate-pulse">Loading Session...</p>
-      </div>
-    );
-  }
-
-  // ── Scene Split ───────────────────────────────────────────────────────────
-  const handleSplitScript = async () => {
-    if (!script.trim()) return;
-    setLoadingScenes(true);
-    try {
-      let currentSessionId = sessionId;
-      if (!currentSessionId) {
-        const sessRes = await fetch(`${API}/api/sessions`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ script, sceneCount })
-        });
-        const sessData = await sessRes.json();
-        currentSessionId = sessData.sessionId;
-        setSessionId(currentSessionId);
-        window.history.replaceState({}, '', '?session=' + currentSessionId);
-      }
-
-      const r = await fetch(`${API}/api/scenes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ script, sceneCount }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      const extractedCharacters = normalizeCharacters(d.characters || d.character);
-      setGlobalCharacters(extractedCharacters);
-      setPrimaryCharacterId(extractedCharacters[0]?.id || '');
-      setNarrativeArc(d.narrativeArc || '');
-      setScenes(d.scenes.map(s => ({
-        ...s,
-        status: 'draft',
-        id: s.id || Math.random().toString(36).substr(2, 9),
-        selectedCharacterId: s.selectedCharacterId || '',
-        selectedEnvironmentId: s.selectedEnvironmentId || '',
-      })));
-      setMergedVideo(null);
-      setAutoRunStage('idle');
-      setAutoRunProgress({});
-    } catch (e) { alert(`Failed to split script: ${e.message}`); }
-    finally { setLoadingScenes(false); }
-  };
-
-  // ── Auto-Run Pipeline ─────────────────────────────────────────────────────
-  const handleAutoRun = () => {
-    if (sseRef.current) sseRef.current.close();
-    setAutoRunStage('running');
-    setAutoRunProgress({});
-    setMergedVideo(null);
-
-    const body = JSON.stringify({ scenes, globalCharacter: activeCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId });
-    fetch(`${API}/api/auto-run`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body })
-      .then(async (res) => {
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        const processLine = (line) => {
-          if (!line.startsWith('data: ')) return;
-          try {
-            const ev = JSON.parse(line.slice(6));
-            handleSSEEvent(ev);
-          } catch {
-            // Ignore malformed SSE fragments and keep stream processing alive.
-          }
-        };
-
-        const pump = async () => {
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split('\n');
-            buffer = lines.pop();
-            lines.forEach(processLine);
-          }
-          buffer.split('\n').forEach(processLine);
-        };
-
-        sseRef.current = { close: () => reader.cancel() };
-        await pump();
-        setAutoRunStage(prev => prev === 'running' ? 'done' : prev);
-      })
-      .catch(e => { console.error(e); setAutoRunStage('error'); });
-  };
-
-  const handleSSEEvent = (ev) => {
-    if (ev.type === 'scene_progress') {
-      const { sceneId, stage, status, data } = ev;
-      setAutoRunCurrentScene(sceneId);
-      setAutoRunProgress(prev => ({ ...prev, [sceneId]: { stage, status } }));
-      if (status === 'done' && data) {
-        const updates = {};
-        if (data.imagePrompt) updates.imagePrompt = data.imagePrompt;
-        if (data.imageUrl) {
-          const genId = Math.random().toString(36).substr(2, 9);
-          const prevGens = scenes.find(s => s.id === sceneId)?.imageGenerations || [];
-          updates.imageGenerations = [
-            ...prevGens.map(g => ({ ...g, isFinal: false })),
-            { id: genId, imageUrl: data.imageUrl, createdAt: Date.now(), isFinal: true },
-          ];
-          updates.imageUrl = data.imageUrl;
-          updates.status = 'image_done';
-        }
-        if (data.videoPrompt) updates.videoPrompt = data.videoPrompt;
-        if (data.videoUrl) { updates.videoUrl = data.videoUrl; updates.status = 'video_done'; }
-        if (Object.keys(updates).length) updateScene(sceneId, updates);
-      }
-    } else if (ev.type === 'merge') {
-      setAutoRunCurrentScene(null);
-    } else if (ev.type === 'pipeline_complete') {
-      setMergedVideo(ev.data.mergedVideoUrl);
-      setAutoRunStage('done');
-      setAutoRunCurrentScene(null);
-    } else if (ev.type === 'error') {
-      console.error('Pipeline error:', ev);
-    } else if (ev.type === 'cancelled') {
-      setAutoRunStage('idle');
-    }
-  };
-
-  const handleStopAutoRun = () => {
-    if (sseRef.current) sseRef.current.close();
-    setAutoRunStage('idle');
-    setAutoRunCurrentScene(null);
-  };
-
-  // ── Manual Merge ──────────────────────────────────────────────────────────
-  const handleMerge = async () => {
-    setMerging(true);
-    try {
-      const videoUrls = scenes.map(s => {
-        const finalGen = s.videoGenerations?.find(g => g.isFinal);
-        return finalGen?.videoUrl || s.videoUrl;
-      }).filter(Boolean);
-      if (!videoUrls.length) throw new Error('No videos to merge');
-      const r = await fetch(`${API}/api/merge`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ videoUrls }) });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
-      setMergedVideo(d.videoUrl);
-    } catch (e) { alert(`Merge failed: ${e.message}`); }
-    finally { setMerging(false); }
-  };
+  // ── Auth actions ───────────────────────────────────────────────────────
+  const handleLogout = () => { localStorage.removeItem('ai-video-token'); localStorage.removeItem('ai-video-token-exp'); setAuthToken(null); };
 
   const handleReset = () => {
-    if (!window.confirm('Start a new session? Your current progress will be lost if not saved.')) return;
-    handleStopAutoRun();
+    if (!window.confirm('Start a new session?')) return;
+    if (sseRef.current) sseRef.current.close();
+    setAutoRunStage('idle'); setAutoRunCurrentScene(null); setAutoRunProgress({});
     setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
     window.localStorage.clear();
     setSessionId(null);
     window.history.replaceState({}, '', window.location.pathname);
   };
 
-  const allDone = scenes.length > 0 && scenes.every(s => Boolean(s.videoUrl));
-  const doneCount = { img: scenes.filter(s => s.imageUrl).length, vid: scenes.filter(s => s.videoUrl).length };
-  const isRunning = autoRunStage === 'running';
+  const handleDeleteSession = async () => {
+    if (!sessionId) return;
+    if (!window.confirm('Delete this session permanently?')) return;
+    try {
+      const r = await fetch(`${API}/api/sessions/${sessionId}`, { method:'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error||'Failed');
+      if (sseRef.current) sseRef.current.close();
+      setAutoRunStage('idle'); setAutoRunCurrentScene(null); setAutoRunProgress({});
+      setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
+      setSessionId(null);
+      setAllSessions(prev=>prev.filter(s=>s.id!==d.id));
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch(err) { alert(`Delete failed: ${err.message}`); }
+  };
 
-  // Determine active pipeline stage for the progress bar
+  // ── Script split ───────────────────────────────────────────────────────
+  const handleSplitScript = async () => {
+    if (!script.trim()) return;
+    setLoadingScenes(true);
+    try {
+      let sid = sessionId;
+      if (!sid) {
+        const res = await fetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
+        const data = await res.json();
+        sid = data.sessionId;
+        setSessionId(sid);
+        window.history.replaceState({}, '', '?session='+sid);
+      }
+      const r = await fetch(`${API}/api/scenes`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      const extractedChars = normalizeCharacters(d.characters||d.character);
+      setGlobalCharacters(extractedChars);
+      setPrimaryCharacterId(extractedChars[0]?.id||'');
+      setNarrativeArc(d.narrativeArc||'');
+      setScenes(d.scenes.map(s=>({...s, status:'draft', id:s.id||Math.random().toString(36).substr(2,9), selectedCharacterId:s.selectedCharacterId||'', selectedEnvironmentId:s.selectedEnvironmentId||''})));
+      setMergedVideo(null);
+      setAutoRunStage('idle');
+      setAutoRunProgress({});
+      setActiveTab('scenes');
+    } catch(e) { alert(`Failed to split script: ${e.message}`); }
+    finally { setLoadingScenes(false); }
+  };
+
+  // ── SSE event handler ──────────────────────────────────────────────────
+  const handleSSEEvent = useCallback((ev) => {
+    if (ev.type==='scene_progress') {
+      const {sceneId, stage, status, data} = ev;
+      setAutoRunCurrentScene(sceneId);
+      setAutoRunProgress(prev=>({...prev,[sceneId]:{stage,status}}));
+      if (status==='done' && data) {
+        const updates = {};
+        if (data.imagePrompt) updates.imagePrompt = data.imagePrompt;
+        if (data.imageUrl) {
+          const genId = Math.random().toString(36).substr(2,9);
+          updates.imageGenerations = prev => {
+            const prevGens = prev?.imageGenerations||[];
+            return [...prevGens.map(g=>({...g,isFinal:false})), {id:genId, imageUrl:data.imageUrl, createdAt:Date.now(), isFinal:true}];
+          };
+          updates.imageUrl = data.imageUrl;
+          updates.status = 'image_done';
+        }
+        if (data.videoPrompt) updates.videoPrompt = data.videoPrompt;
+        if (data.videoUrl) { updates.videoUrl = data.videoUrl; updates.status='video_done'; }
+        if (Object.keys(updates).length) {
+          setScenes(prev => prev.map(s => {
+            if (s.id !== sceneId) return s;
+            const next = {...s};
+            if (updates.imagePrompt) next.imagePrompt = updates.imagePrompt;
+            if (updates.imageUrl) {
+              const prevGens = s.imageGenerations||[];
+              const genId = Math.random().toString(36).substr(2,9);
+              next.imageGenerations = [...prevGens.map(g=>({...g,isFinal:false})), {id:genId, imageUrl:updates.imageUrl, createdAt:Date.now(), isFinal:true}];
+              next.imageUrl = updates.imageUrl;
+              next.status = 'image_done';
+            }
+            if (updates.videoPrompt) next.videoPrompt = updates.videoPrompt;
+            if (updates.videoUrl) { next.videoUrl = updates.videoUrl; next.status='video_done'; }
+            return next;
+          }));
+        }
+      }
+    } else if (ev.type==='pipeline_complete') {
+      setMergedVideo(ev.data.mergedVideoUrl);
+      setAutoRunStage('done');
+      setAutoRunCurrentScene(null);
+    } else if (ev.type==='merge') {
+      setAutoRunCurrentScene(null);
+    } else if (ev.type==='error') {
+      console.error('Pipeline error:', ev);
+    } else if (ev.type==='cancelled') {
+      setAutoRunStage('idle');
+    }
+  }, [setScenes, setMergedVideo]);
+
+  // ── Auto-run ───────────────────────────────────────────────────────────
+  const handleAutoRun = () => {
+    if (sseRef.current) sseRef.current.close();
+    setAutoRunStage('running');
+    setAutoRunProgress({});
+    setMergedVideo(null);
+    const body = JSON.stringify({scenes, globalCharacter:activeCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId});
+    fetch(`${API}/api/auto-run`, { method:'POST', headers:{'Content-Type':'application/json'}, body })
+      .then(async res => {
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        const processLine = (line) => {
+          if (!line.startsWith('data: ')) return;
+          try { handleSSEEvent(JSON.parse(line.slice(6))); } catch {}
+        };
+        sseRef.current = { close: () => reader.cancel() };
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, {stream:true});
+          const lines = buffer.split('\n');
+          buffer = lines.pop();
+          lines.forEach(processLine);
+        }
+        buffer.split('\n').forEach(processLine);
+        setAutoRunStage(prev => prev==='running' ? 'done' : prev);
+      })
+      .catch(e => { console.error(e); setAutoRunStage('error'); });
+  };
+
+  const handleStopAutoRun = () => { if (sseRef.current) sseRef.current.close(); setAutoRunStage('idle'); setAutoRunCurrentScene(null); };
+
+  // ── Merge ──────────────────────────────────────────────────────────────
+  const handleMerge = async () => {
+    setMerging(true);
+    try {
+      const videoUrls = scenes.map(s=>(s.videoGenerations?.find(g=>g.isFinal)?.videoUrl||s.videoUrl)).filter(Boolean);
+      if (!videoUrls.length) throw new Error('No videos to merge');
+      const r = await fetch(`${API}/api/merge`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoUrls}) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setMergedVideo(d.videoUrl);
+    } catch(e) { alert(`Merge failed: ${e.message}`); }
+    finally { setMerging(false); }
+  };
+
+  // ── Pipeline stage ─────────────────────────────────────────────────────
+  const doneCount = { img:scenes.filter(s=>s.imageUrl).length, vid:scenes.filter(s=>s.videoUrl).length };
   const activePipelineStage = (() => {
     if (!scenes.length) return 'script';
     if (mergedVideo) return 'merge';
-    if (doneCount.vid === scenes.length) return 'video';
-    if (doneCount.img === scenes.length) return 'image';
+    if (doneCount.vid===scenes.length) return 'video';
+    if (doneCount.img===scenes.length) return 'image';
     return 'image_prompt';
   })();
 
-  const isPartiallyDone = scenes.some(s => s.status && s.status !== 'draft') && !allDone;
+  // ── Early returns ──────────────────────────────────────────────────────
+  if (!authChecked) return <Loader label="Checking access…" />;
+  if (!authToken)   return <Login onLogin={setAuthToken} />;
+  if (isInitializing) return <Loader label="Loading session…" />;
 
-  if (isInitializing) {
-    return (
-      <div className="min-h-screen bg-[#f0f1f6] flex items-center justify-center flex-col gap-4">
-        <Spinner size={32} color="border-indigo-600" />
-        <p className="text-gray-500 font-semibold animate-pulse">Loading Session...</p>
-      </div>
-    );
-  }
+  const sessionSelectHandler = (sid) => { window.location.href = '?session=' + sid; };
 
-  return (
-    <div className="min-h-screen bg-[#f0f1f6] text-gray-900 font-sans pb-32">
-      {/* Header */}
-      <header className="bg-white border-b border-gray-200 px-6 py-4 sticky top-0 z-40 shadow-sm flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-black text-gray-900 tracking-tight">Cinematic AI Reel Builder</h1>
-          <p className="text-[11px] text-gray-400 uppercase tracking-widest mt-0.5">DeepSeek · Gemini · Veo 3</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button 
-            onClick={handleReset} 
-            className="text-xs font-bold bg-indigo-600 text-white border border-indigo-700 px-4 py-2 rounded-lg hover:bg-indigo-700 flex items-center gap-2 shadow-sm"
-          >
-            <Plus className="w-4 h-4" /> New Session
-          </button>
-          
-          <select 
-            value={sessionId || ''} 
-            onChange={(e) => {
-              if (e.target.value) {
-                window.location.href = '?session=' + e.target.value;
-              } else {
-                handleReset();
-              }
-            }}
-            className="text-xs font-bold bg-white text-gray-700 border border-gray-200 px-3 py-2 rounded-lg hover:border-gray-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 max-w-[200px] sm:max-w-[300px] truncate cursor-pointer"
-          >
-            <option value="" disabled>Select Session</option>
-            {allSessions.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.narrative_arc ? s.narrative_arc.substring(0, 50) + (s.narrative_arc.length > 50 ? '...' : '') : `Session ${s.id}`}
-              </option>
-            ))}
-          </select>
-
-          {sessionId && (
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(window.location.href);
-                alert('Session link copied to clipboard!');
-              }}
-              className="text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-100 flex items-center gap-2"
-            >
-              <Link2 className="w-4 h-4" /> Copy Share Link
-            </button>
-          )}
-          {sessionId && (
-            <button
-              onClick={handleDeleteSession}
-              className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2"
-            >
-              <Trash2 className="w-4 h-4" /> Delete Session
-            </button>
-          )}
-          <button onClick={handleLogout} className="text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2">
-            <LogOut className="w-4 h-4" /> Logout
-          </button>
-        </div>
-      </header>
-
-      <main className="max-w-6xl mx-auto px-6 py-8 space-y-8">
-
-        {/* Step 1: Script */}
-        <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200">
-          <h2 className="font-bold text-base mb-4 flex items-center gap-2">
-            <span className="bg-indigo-600 text-white text-[11px] font-black px-2 py-0.5 rounded-full">1</span>
-            Master Script
-          </h2>
-          <textarea
-            value={script}
-            onChange={e => setScript(e.target.value)}
-            placeholder="Paste your master script here… The AI will break it into scenes, extract dialogue, emotional arcs, and generate everything automatically."
-            className="w-full border border-gray-200 rounded-xl p-4 min-h-[160px] focus:outline-none focus:border-indigo-500 font-mono text-sm leading-relaxed resize-none"
+  const mainContent = () => {
+    switch (activeTab) {
+      case 'script':
+        return (
+          <ScriptPanel
+            script={script}
+            setScript={setScript}
+            sceneCount={sceneCount}
+            setSceneCount={setSceneCount}
+            targetLanguage={targetLanguage}
+            setTargetLanguage={setTargetLanguage}
+            onSplit={() => { handleSplitScript(); setActiveTab('scenes'); }}
+            loading={loadingScenes}
           />
-          <div className="mt-4 flex justify-between items-center bg-gray-50 p-3 rounded-xl border border-gray-100 gap-4">
-            <div className="flex items-center gap-3 flex-wrap">
-              <label className="text-sm font-bold text-gray-700">Scenes:</label>
-              <input
-                type="number"
-                min={0}
-                max={20}
-                value={sceneCount}
-                onChange={e => setSceneCount(Math.max(0, parseInt(e.target.value) || 0))}
-                className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none w-20 text-center"
-              />
-              <span className="text-sm text-gray-500 font-medium">
-                {sceneCount === 0 ? 'Auto (Let AI decide)' : `scene${sceneCount !== 1 ? 's' : ''}`}
-              </span>
-              <div className="flex items-center gap-2 ml-2">
-                <label className="text-sm font-bold text-gray-700">Dialogue Language:</label>
-                <select
-                  value={targetLanguage}
-                  onChange={e => setTargetLanguage(e.target.value)}
-                  className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm font-semibold focus:ring-2 focus:ring-indigo-500 outline-none"
-                >
-                  {['Hindi','English','Tamil','Telugu','Bengali','Marathi','Punjabi','Urdu','Gujarati','Kannada','Malayalam'].map(l => (
-                    <option key={l}>{l}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <Btn onClick={handleSplitScript} loading={loadingScenes}>Split into Scenes</Btn>
-          </div>
-        </section>
-
-        {/* Character + Environments Panels */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        );
+      case 'characters':
+        return (
           <CharacterPanel
             characters={globalCharacters}
             onUpdate={setGlobalCharacters}
@@ -645,146 +407,82 @@ export default function App() {
             onSetPrimary={setPrimaryCharacterId}
             script={script}
           />
+        );
+      case 'environments':
+        return (
           <EnvironmentsPanel
             environments={globalEnvironments}
             onUpdate={setGlobalEnvironments}
             script={script}
           />
-        </div>
+        );
+      case 'reel':
+        return (
+          <ReelView
+            scenes={scenes}
+            mergedVideo={mergedVideo}
+            setMergedVideo={setMergedVideo}
+            merging={merging}
+            onMerge={handleMerge}
+            refreshMediaUrl={refreshMediaUrl}
+          />
+        );
+      case 'scenes':
+      default:
+        return (
+          <ScenesView
+            scenes={scenes}
+            updateScene={updateScene}
+            deleteScene={deleteScene}
+            addScene={addScene}
+            globalCharacter={activeCharacter}
+            globalCharacters={globalCharacters}
+            globalEnvironments={globalEnvironments}
+            targetLanguage={targetLanguage}
+            autoRunStage={autoRunStage}
+            autoRunCurrentScene={autoRunCurrentScene}
+            onAutoRun={handleAutoRun}
+            onStopAutoRun={handleStopAutoRun}
+            onMerge={handleMerge}
+            mergedVideo={mergedVideo}
+            setMergedVideo={setMergedVideo}
+            merging={merging}
+            refreshMediaUrl={refreshMediaUrl}
+            narrativeArc={narrativeArc}
+          />
+        );
+    }
+  };
 
-        {/* Narrative Arc Banner */}
-        {narrativeArc && (
-          <div className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white px-6 py-4 rounded-2xl shadow-lg flex items-start gap-3">
-            <Film className="w-6 h-6 mt-0.5" />
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-widest text-indigo-200 mb-1">Narrative Arc</div>
-              <p className="text-sm font-medium leading-relaxed">{narrativeArc}</p>
-            </div>
-          </div>
-        )}
+  return (
+    <div className="app-shell">
+      <Topbar
+          onNew={handleReset}
+          onLogout={handleLogout}
+          onOpenReel={() => setActiveTab('reel')}
+          hasScenes={scenes.length > 0}
+        />
 
-        {/* Step 2: Scenes */}
-        {scenes.length > 0 && (
-          <section>
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
-              <h2 className="font-bold text-base flex items-center gap-2">
-                <span className="bg-indigo-600 text-white text-[11px] font-black px-2 py-0.5 rounded-full">2</span>
-                Scene Generation
-                <span className="text-sm text-gray-400 font-normal ml-1">{doneCount.img}/{scenes.length} images · {doneCount.vid}/{scenes.length} videos</span>
-              </h2>
-              <div className="flex gap-2">
-                {isRunning ? (
-                  <Btn onClick={handleStopAutoRun} variant="danger" className="px-5 py-2.5">
-                    <Spinner size={14} color="border-white" /> Stop Auto-Run
-                  </Btn>
-                ) : (
-                  <Btn onClick={handleAutoRun} variant="success" disabled={autoRunStage === 'done' && allDone} className="px-5 py-2.5 text-sm font-black">
-                    <Play className="w-4 h-4 fill-current" /> {isPartiallyDone ? 'Resume Generation' : 'Auto-Generate All Scenes'}
-                  </Btn>
-                )}
-              </div>
-            </div>
+      <div className="app-body">
+        <Sidebar
+          sessions={allSessions}
+          sessionId={sessionId}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+          onSessionSelect={sessionSelectHandler}
+        />
 
-            {/* Auto-run status banner */}
-            {isRunning && autoRunCurrentScene && (
-              <div className="mb-4 bg-amber-50 border border-amber-200 text-amber-800 px-4 py-3 rounded-xl text-sm font-semibold flex items-center gap-2">
-                <Spinner size={14} color="border-amber-600" />
-                Processing Scene {scenes.findIndex(s => s.id === autoRunCurrentScene) + 1} of {scenes.length}…
-              </div>
-            )}
+        <main className="main-content">
+          {mainContent()}
+        </main>
+      </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {scenes.map((scene, i) => (
-                <SceneCard
-                  key={scene.id}
-                  scene={scene}
-                  index={i}
-                  updateScene={updateScene}
-                  globalCharacter={activeCharacter}
-                  globalCharacters={globalCharacters}
-                  globalEnvironments={globalEnvironments}
-                  targetLanguage={targetLanguage}
-                  previousSceneImage={i > 0 ? (scenes[i-1].imageUrl || '') : ''}
-                  totalScenes={scenes.length}
-                  autoRunStage={autoRunStage}
-                  onDelete={() => deleteScene(scene.id)}
-                  onAddAfter={() => addScene(i)}
-                  refreshMediaUrl={refreshMediaUrl}
-                />
-              ))}
-            </div>
-            <div className="flex justify-center mt-2">
-              <button
-                onClick={() => addScene(scenes.length - 1)}
-                className="flex items-center gap-2 text-sm font-bold text-indigo-600 border-2 border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50 px-6 py-3 rounded-2xl transition-all"
-              >
-                <Plus className="w-5 h-5" /> Add Scene
-              </button>
-            </div>
-          </section>
-        )}
-
-        {/* Step 3: Final Reel */}
-        {scenes.length > 0 && (
-          <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-200 text-center flex flex-col items-center">
-            <h2 className="font-bold text-base mb-1 flex items-center gap-2">
-              <span className="bg-indigo-600 text-white text-[11px] font-black px-2 py-0.5 rounded-full">3</span>
-              Final Reel
-            </h2>
-            <p className="text-gray-500 text-sm mb-6">Merge all completed scene videos into one continuous cinematic reel.</p>
-
-            <div className="flex flex-col items-center gap-6 w-full max-w-xs">
-              {!mergedVideo ? (
-                <Btn onClick={handleMerge} loading={merging} disabled={!allDone && !isRunning} className="px-8 py-3 text-base w-full">
-                  {merging ? 'Merging…' : 'Merge & Export Reel'}
-                </Btn>
-              ) : (
-                <div className="w-full flex flex-col items-center gap-4">
-                  <video
-                    src={getMediaUrl(mergedVideo)}
-                    onError={async () => {
-                      const freshUrl = await refreshMediaUrl(mergedVideo);
-                      if (freshUrl && freshUrl !== mergedVideo) setMergedVideo(freshUrl);
-                    }}
-                    controls
-                    autoPlay
-                    className="w-full bg-black rounded-xl shadow-lg border border-gray-200"
-                  />
-                  <a href={getMediaUrl(mergedVideo)} download className="flex items-center gap-1.5 text-indigo-600 font-semibold hover:underline text-sm">
-                    <Download className="w-4 h-4" /> Download MP4
-                  </a>
-                  <Btn onClick={handleMerge} loading={merging} disabled={!allDone && !isRunning} variant="ghost" className="w-full mt-2">
-                    {merging ? 'Merging…' : <><RotateCcw className="w-4 h-4" /> Re-Merge & Export</>}
-                  </Btn>
-                </div>
-              )}
-            </div>
-          </section>
-        )}
-      </main>
-
-      {/* Pipeline Progress Bar (sticky bottom) */}
+      {/* Pipeline bar — only shown when there are scenes */}
       {scenes.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/90 backdrop-blur-sm border-t border-gray-200 px-6 py-3">
-          <div className="max-w-6xl mx-auto flex items-center gap-2 justify-center">
-            {PIPELINE_STAGES.map((s, i) => {
-              const stageOrder = PIPELINE_STAGES.map(x => x.key);
-              const activeIdx = stageOrder.indexOf(activePipelineStage);
-              const thisIdx = stageOrder.indexOf(s.key);
-              const done = thisIdx < activeIdx || (thisIdx === activeIdx && activePipelineStage === 'merge');
-              const active = thisIdx === activeIdx && activePipelineStage !== 'merge';
-              return (
-                <React.Fragment key={s.key}>
-                  <div className={`flex items-center gap-1.5 text-[11px] font-bold px-3 py-1.5 rounded-full transition-all ${done ? 'bg-green-100 text-green-700' : active ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-400'}`}>
-                    {done ? <Check className="w-3 h-3" strokeWidth={3} /> : active && isRunning ? <Spinner size={10} color="border-indigo-600" /> : null}
-                    {s.label}
-                  </div>
-                  {i < PIPELINE_STAGES.length - 1 && <ArrowRight className={`w-3 h-3 ${thisIdx < activeIdx ? 'text-green-500' : 'text-gray-300'}`} />}
-                </React.Fragment>
-              );
-            })}
-          </div>
-        </div>
+        <PipelineBar
+          activeStage={activePipelineStage}
+          isRunning={autoRunStage==='running'}
+        />
       )}
     </div>
   );

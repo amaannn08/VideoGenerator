@@ -4,27 +4,27 @@ import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, Ref
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
-function Spinner({ size = 14, color = 'border-indigo-600' }) {
+function Spinner({ size = 14, color = 'border-[var(--amber)]' }) {
   return <div style={{ width: size, height: size }} className={`rounded-full border-2 ${color} border-t-transparent animate-spin flex-shrink-0`} />;
 }
 
 function Btn({ onClick, disabled, loading, children, variant = 'primary', className = '' }) {
-  const base = 'inline-flex justify-center items-center gap-2 font-semibold text-sm px-4 py-2 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed';
-  const v = { primary: 'bg-indigo-600 text-white hover:bg-indigo-700 shadow-sm', ghost: 'bg-white text-gray-700 border border-gray-200 hover:border-indigo-300 hover:text-indigo-600 shadow-sm', danger: 'bg-red-500 text-white hover:bg-red-600 shadow-sm' };
-  return <button onClick={onClick} disabled={disabled || loading} className={`${base} ${v[variant]} ${className}`}>{loading && <Spinner size={14} color={variant === 'primary' || variant === 'danger' ? 'border-white' : 'border-indigo-600'} />}{children}</button>;
+  const cls = { primary: 'btn btn-amber', ghost: 'btn btn-outline', danger: 'btn btn-danger' };
+  const spinColor = variant === 'primary' ? 'border-[#080910]' : 'border-[var(--amber)]';
+  return <button onClick={onClick} disabled={disabled || loading} className={`${cls[variant] || cls.primary} ${className}`}>{loading && <Spinner size={13} color={spinColor} />}{children}</button>;
 }
 
 function Modal({ isOpen, onClose, title, children }) {
   useEffect(() => { document.body.style.overflow = isOpen ? 'hidden' : 'unset'; return () => { document.body.style.overflow = 'unset'; }; }, [isOpen]);
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60">
-      <div className="bg-white rounded-3xl w-full max-w-5xl h-[92vh] shadow-2xl flex flex-col overflow-hidden">
-        <div className="flex items-center justify-between p-6 border-b border-gray-100 bg-gray-50/50">
-          <h2 className="font-bold text-xl text-gray-800">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-800 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-200 font-bold text-2xl">&times;</button>
+    <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(0,0,0,0.8)' }}>
+      <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:20, width:'100%', maxWidth:960, height:'min(92vh,920px)', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 24px', borderBottom:'1px solid var(--border-subtle)', background:'var(--bg-raised)' }}>
+          <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:16, color:'var(--text-primary)' }}>{title}</h2>
+          <button onClick={onClose} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid var(--border-default)', background:'var(--bg-overlay)', color:'var(--text-secondary)', cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>&times;</button>
         </div>
-        <div className="p-8 flex-1 overflow-y-auto bg-[#fafbfc]">{children}</div>
+        <div style={{ padding:'24px', flex:1, overflowY:'auto', background:'var(--bg-surface)' }}>{children}</div>
       </div>
     </div>
   );
@@ -266,140 +266,73 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
 
   const isAutoActive = autoRunStage && autoRunStage !== 'idle';
 
+  const cardBorder = status === 'video_done' ? '1px solid rgba(34,197,94,0.3)' : isGenerating ? '1px solid rgba(245,166,35,0.3)' : '1px solid var(--border-default)';
+  const cardGlow = status === 'video_done' ? '0 0 20px rgba(34,197,94,0.06)' : isGenerating ? '0 0 20px rgba(245,166,35,0.06)' : 'none';
+
   return (
     <>
-      <div className={`bg-white rounded-2xl border shadow-sm flex flex-col overflow-hidden transition-all hover:shadow-md ${status === 'video_done' ? 'border-green-200' : isGenerating ? 'border-amber-200 shadow-amber-100' : 'border-gray-200'}`}>
-        <div className="bg-gray-50 border-b border-gray-100 px-3 py-2 flex justify-between items-start gap-2">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Scene {index + 1}</span>
-              <select
-                value={localDuration}
-                onChange={e => {
-                  const newDuration = parseInt(e.target.value, 10);
-                  setLocalDuration(newDuration);
-                  updateScene(scene.id, { duration: newDuration });
-                }}
-                className="bg-gray-200 text-gray-600 text-[10px] px-1.5 py-0.5 rounded uppercase font-bold focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
-              >
-                <option value={4}>4s</option>
-                <option value={6}>6s</option>
-                <option value={8}>8s</option>
+      <div style={{ background:'var(--bg-surface)', border:cardBorder, borderRadius:14, boxShadow:cardGlow, display:'flex', flexDirection:'column', overflow:'hidden', transition:'box-shadow 0.2s' }}>
+        <div style={{ background:'var(--bg-raised)', borderBottom:'1px solid var(--border-subtle)', padding:'10px 14px', display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8 }}>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+              <span style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Scene {index + 1}</span>
+              <select value={localDuration} onChange={e => { const d=parseInt(e.target.value,10); setLocalDuration(d); updateScene(scene.id,{duration:d}); }} style={{ background:'var(--bg-overlay)', color:'var(--text-secondary)', fontSize:11, fontWeight:700, padding:'3px 6px', borderRadius:6, border:'1px solid var(--border-subtle)', cursor:'pointer' }}>
+                <option value={4}>4s</option><option value={6}>6s</option><option value={8}>8s</option>
               </select>
-              {scene.emotionalTone && <span className="flex items-center gap-1 bg-indigo-50 text-indigo-600 text-[10px] px-2 py-0.5 rounded-full font-semibold border border-indigo-100 truncate max-w-[120px]" title={scene.emotionalTone}><Smile className="w-3 h-3" /> {scene.emotionalTone.split(',')[0]}</span>}
+              {scene.emotionalTone && <span style={{ fontSize:10, color:'var(--amber)', background:'var(--amber-glow)', border:'1px solid rgba(245,166,35,0.2)', padding:'2px 8px', borderRadius:999, fontWeight:600, maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={scene.emotionalTone}>{scene.emotionalTone.split(',')[0]}</span>}
             </div>
-            {scene.title && <p className="font-bold text-gray-800 text-sm mt-0.5 truncate">{scene.title}</p>}
+            {scene.title && <p style={{ fontSize:13, fontWeight:600, color:'var(--text-primary)', marginTop:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{scene.title}</p>}
           </div>
-          <div className="flex items-center gap-1 shrink-0">
-            <span className={`text-[10px] font-bold px-2 py-1 rounded-full whitespace-nowrap flex items-center gap-1 ${statusColors[status] || 'bg-gray-100 text-gray-500'}`}>
-              {isGenerating && <Spinner size={10} color="border-current" />}
-              {statusLabels[status] || status}
+          <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+            <span style={{ fontSize:10, fontWeight:700, padding:'3px 10px', borderRadius:999, whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:4, background: status==='video_done'?'var(--green-dim)':isGenerating?'var(--amber-glow)':'var(--bg-overlay)', color: status==='video_done'?'var(--green)':isGenerating?'var(--amber)':'var(--text-muted)' }}>
+              {isGenerating && <Spinner size={9} />}{statusLabels[status] || status}
             </span>
-            <button
-              title="Add scene below"
-              onClick={onAddAfter}
-              className="w-6 h-6 flex items-center justify-center rounded-full bg-indigo-50 text-indigo-500 hover:bg-indigo-100 hover:text-indigo-700 font-black text-sm transition-colors"
-            >
-              <Plus className="w-4 h-4" />
-            </button>
-            <button
-              title="Delete scene"
-              onClick={() => { if (window.confirm(`Delete Scene ${index + 1}?`)) onDelete(); }}
-              className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 font-bold text-base transition-colors leading-none"
-            >
-              <X className="w-4 h-4" />
-            </button>
+            <button onClick={onAddAfter} style={{ width:24, height:24, borderRadius:'50%', background:'var(--bg-overlay)', border:'1px solid var(--border-subtle)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-secondary)' }}><Plus size={12} /></button>
+            <button onClick={() => { if(window.confirm(`Delete Scene ${index+1}?`)) onDelete(); }} style={{ width:24, height:24, borderRadius:'50%', background:'var(--red-dim)', border:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--red)' }}><X size={12} /></button>
           </div>
         </div>
 
-        <div className="p-3 flex-1 flex flex-col gap-2">
-          {/* Scene summary */}
-          <div className="group relative border border-transparent hover:border-indigo-100 hover:bg-indigo-50/30 p-1.5 -mx-1.5 rounded-lg transition-colors cursor-pointer" onClick={() => setScriptModal(true)}>
-            <p className="text-sm text-gray-600 line-clamp-2">{scene.summary}</p>
-            <p className="text-[11px] text-gray-400 mt-1 flex items-center gap-1"><MapPin className="w-3 h-3" /> {scene.location} · {scene.timeOfDay}</p>
-            <button className="absolute top-2 right-2 bg-white text-indigo-600 hover:text-indigo-800 text-[10px] px-2 py-1 rounded shadow-sm opacity-0 group-hover:opacity-100 transition-opacity font-semibold border border-indigo-100">
-              Edit Details
-            </button>
-          </div>
+        <div style={{ padding:'12px 14px', flex:1, display:'flex', flexDirection:'column', gap:10 }}>
+          <button type="button" onClick={() => setScriptModal(true)} style={{ textAlign:'left', background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'10px 12px', cursor:'pointer', transition:'border-color 0.15s' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--border-strong)'} onMouseOut={e=>e.currentTarget.style.borderColor='var(--border-subtle)'}>
+            <p style={{ fontSize:12, color:'var(--text-secondary)', lineHeight:1.55, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden' }}>{scene.summary || <span style={{color:'var(--text-muted)'}}>No summary — click to edit</span>}</p>
+            <p style={{ fontSize:11, color:'var(--text-muted)', marginTop:5, display:'flex', alignItems:'center', gap:4 }}><MapPin size={10} /> {scene.location} {scene.timeOfDay ? '· '+scene.timeOfDay : ''}</p>
+          </button>
 
-          {/* Dialogue — editable inline */}
-          <div className="bg-gradient-to-br from-slate-50 to-indigo-50 border border-indigo-100 rounded-xl px-2.5 py-2 space-y-1">
-            <div className="flex items-center justify-between">
-              <div className="text-[10px] font-black text-indigo-400 uppercase tracking-widest flex items-center gap-1"><Mic className="w-3 h-3" /> Dialogue</div>
-              <input
-                value={localLang}
-                onChange={e => setLocalLang(e.target.value)}
-                onBlur={() => saveDialogue(localDialogue, localTone, localPacing, localLang)}
-                className="text-[10px] font-bold text-indigo-500 bg-indigo-100 border-0 rounded px-1.5 py-0.5 w-20 text-center focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                placeholder="Language"
-              />
-            </div>
-            <textarea
-              value={localDialogue}
-              onChange={e => setLocalDialogue(e.target.value)}
-              onBlur={() => saveDialogue(localDialogue, localTone, localPacing, localLang)}
-              rows={2}
-              placeholder="No dialogue — type the spoken line here…"
-              className="w-full text-sm text-gray-800 italic font-medium bg-white/70 border border-indigo-100 rounded-lg px-2.5 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400/30 placeholder:text-gray-300 placeholder:not-italic"
-            />
-            <div className="flex gap-1.5">
-              <select value={localTone} onChange={e => { setLocalTone(e.target.value); saveDialogue(localDialogue, e.target.value, localPacing, localLang); }} className="text-[10px] font-semibold bg-white border border-indigo-100 rounded px-1.5 py-1 flex-1 text-gray-600 focus:outline-none">
-                <option>commanding and calm</option>
-                <option>heavy and burdened</option>
-                <option>whisper-like and introspective</option>
-                <option>broken and raw</option>
-                <option>quiet and resolute</option>
-                <option>calm and deliberate</option>
+          <details style={{ background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'8px 12px' }} open>
+            <summary style={{ listStyle:'none', cursor:'pointer', fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--text-muted)', display:'flex', alignItems:'center', gap:5, marginBottom:6 }}><Mic size={10} /> Dialogue</summary>
+            <input value={localLang} onChange={e=>setLocalLang(e.target.value)} onBlur={()=>saveDialogue(localDialogue,localTone,localPacing,localLang)} placeholder="Language" style={{ fontSize:10, fontWeight:700, color:'var(--amber)', background:'var(--amber-glow)', border:'none', borderRadius:6, padding:'3px 8px', width:70, textAlign:'center', outline:'none', marginBottom:6 }} />
+            <textarea value={localDialogue} onChange={e=>setLocalDialogue(e.target.value)} onBlur={()=>saveDialogue(localDialogue,localTone,localPacing,localLang)} rows={2} placeholder="No dialogue — type the spoken line here…" style={{ width:'100%', fontSize:12, fontStyle:'italic', color:'var(--text-primary)', background:'var(--bg-overlay)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'8px 10px', resize:'none', outline:'none', lineHeight:1.5, boxSizing:'border-box' }} />
+            <div style={{ display:'flex', gap:6, marginTop:6 }}>
+              <select value={localTone} onChange={e=>{setLocalTone(e.target.value);saveDialogue(localDialogue,e.target.value,localPacing,localLang);}} style={{ fontSize:10, flex:1, background:'var(--bg-overlay)', color:'var(--text-secondary)', border:'1px solid var(--border-subtle)', borderRadius:6, padding:'4px 6px', outline:'none' }}>
+                <option>commanding and calm</option><option>heavy and burdened</option><option>whisper-like and introspective</option><option>broken and raw</option><option>quiet and resolute</option><option>calm and deliberate</option>
               </select>
-              <select value={localPacing} onChange={e => { setLocalPacing(e.target.value); saveDialogue(localDialogue, localTone, e.target.value, localLang); }} className="text-[10px] font-semibold bg-white border border-indigo-100 rounded px-1.5 py-1 flex-1 text-gray-600 focus:outline-none">
-                <option>slow with natural pauses</option>
-                <option>slow with long pauses between words</option>
-                <option>each word deliberate</option>
-                <option>clipped and intense</option>
-                <option>breathless</option>
+              <select value={localPacing} onChange={e=>{setLocalPacing(e.target.value);saveDialogue(localDialogue,localTone,e.target.value,localLang);}} style={{ fontSize:10, flex:1, background:'var(--bg-overlay)', color:'var(--text-secondary)', border:'1px solid var(--border-subtle)', borderRadius:6, padding:'4px 6px', outline:'none' }}>
+                <option>slow with natural pauses</option><option>slow with long pauses between words</option><option>each word deliberate</option><option>clipped and intense</option><option>breathless</option>
               </select>
             </div>
-          </div>
+          </details>
 
-          <div className="grid grid-cols-1 gap-2">
+          <div style={{ display:'grid', gap:8 }}>
             <div>
-              <label className="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1 block">Character</label>
-              <select
-                value={scene.selectedCharacterId || ''}
-                onChange={(e) => updateScene(scene.id, { selectedCharacterId: e.target.value })}
-                className="w-full text-xs border border-indigo-100 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-              >
+              <p style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--amber)', marginBottom:4 }}>Character</p>
+              <select value={scene.selectedCharacterId||''} onChange={e=>updateScene(scene.id,{selectedCharacterId:e.target.value})} style={{ width:'100%', fontSize:12, background:'var(--bg-raised)', color:'var(--text-primary)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'7px 10px', outline:'none' }}>
                 <option value="">Auto (Primary Character)</option>
-                {(globalCharacters || []).map((char, ci) => (
-                  <option key={char.id || ci} value={char.id}>
-                    {char.name || `Character ${ci + 1}`}
-                  </option>
-                ))}
+                {(globalCharacters||[]).map((c,i)=><option key={c.id||i} value={c.id}>{c.name||`Character ${i+1}`}</option>)}
               </select>
             </div>
             <div>
-              <label className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1 block">Environment</label>
-              <select
-                value={scene.selectedEnvironmentId || ''}
-                onChange={(e) => updateScene(scene.id, { selectedEnvironmentId: e.target.value })}
-                className="w-full text-xs border border-emerald-100 rounded-lg px-2 py-1.5 bg-white text-gray-700 focus:outline-none focus:ring-2 focus:ring-emerald-300"
-              >
+              <p style={{ fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--green)', marginBottom:4 }}>Environment</p>
+              <select value={scene.selectedEnvironmentId||''} onChange={e=>updateScene(scene.id,{selectedEnvironmentId:e.target.value})} style={{ width:'100%', fontSize:12, background:'var(--bg-raised)', color:'var(--text-primary)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'7px 10px', outline:'none' }}>
                 <option value="">Auto (Match by Scene Location)</option>
-                {(globalEnvironments || []).map((env, ei) => (
-                  <option key={env.id || ei} value={env.id}>
-                    {env.name || `Environment ${ei + 1}`}
-                  </option>
-                ))}
+                {(globalEnvironments||[]).map((e,i)=><option key={e.id||i} value={e.id}>{e.name||`Environment ${i+1}`}</option>)}
               </select>
             </div>
           </div>
 
-          {/* Progress indicators */}
-          <div className="flex gap-2 text-[10px] font-bold uppercase tracking-wider bg-gray-50 rounded-lg p-1.5 border border-gray-100 overflow-x-auto">
-            {[['Img Prompt', hasImgP], ['Image', hasImg], ['Vid Prompt', hasVidP], ['Video', hasVid]].map(([label, done]) => (
-              <div key={label} className={`flex items-center gap-1 ${done ? 'text-green-600' : 'text-gray-300'}`}>
-                {done ? <span className="bg-green-100 text-green-700 rounded-full w-4 h-4 flex items-center justify-center"><Check className="w-2.5 h-2.5" strokeWidth={3} /></span> : <span className="border-2 border-gray-200 rounded-full w-4 h-4" />}
-                {label}
+          <div style={{ display:'flex', gap:8, background:'var(--bg-raised)', borderRadius:8, padding:'8px 10px', border:'1px solid var(--border-subtle)', overflowX:'auto' }}>
+            {[['Img Prompt',hasImgP],['Image',hasImg],['Vid Prompt',hasVidP],['Video',hasVid]].map(([label,done])=>(
+              <div key={label} style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.08em', color:done?'var(--green)':'var(--text-muted)', whiteSpace:'nowrap' }}>
+                {done?<Check size={10} strokeWidth={3} />:<span style={{width:10,height:10,borderRadius:'50%',border:'1.5px solid var(--text-muted)',display:'inline-block'}} />}{label}
               </div>
             ))}
           </div>
