@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Link2, RotateCcw, LogOut, Film, Play, Check, Download, Plus, ArrowRight } from 'lucide-react';
+import { Link2, RotateCcw, LogOut, Film, Play, Check, Download, Plus, ArrowRight, Trash2 } from 'lucide-react';
 import SceneCard from './components/SceneCard';
 import Login from './components/Login';
 
@@ -235,6 +235,32 @@ export default function App() {
     setAuthToken(null);
   };
 
+  const handleDeleteSession = async () => {
+    if (!sessionId) return;
+    if (!window.confirm('Delete this session permanently? This cannot be undone.')) return;
+
+    try {
+      const r = await fetch(`${API}/api/sessions/${sessionId}`, { method: 'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || 'Failed to delete session');
+
+      if (sseRef.current) sseRef.current.close();
+      setAutoRunStage('idle');
+      setAutoRunCurrentScene(null);
+      setAutoRunProgress({});
+      setScript('');
+      setScenes([]);
+      setGlobalCharacter('');
+      setNarrativeArc('');
+      setMergedVideo(null);
+      setSessionId(null);
+      setAllSessions(prev => prev.filter(s => s.id !== d.id));
+      window.history.replaceState({}, '', window.location.pathname);
+    } catch (err) {
+      alert(`Delete failed: ${err.message}`);
+    }
+  };
+
   // ── Early returns (after ALL hooks) ───────────────────────────────────────
   if (!authChecked) {
     return (
@@ -451,6 +477,14 @@ export default function App() {
               className="text-xs font-bold bg-indigo-50 text-indigo-600 border border-indigo-200 px-4 py-2 rounded-lg hover:bg-indigo-100 flex items-center gap-2"
             >
               <Link2 className="w-4 h-4" /> Copy Share Link
+            </button>
+          )}
+          {sessionId && (
+            <button
+              onClick={handleDeleteSession}
+              className="text-xs font-bold bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-lg hover:bg-red-100 flex items-center gap-2"
+            >
+              <Trash2 className="w-4 h-4" /> Delete Session
             </button>
           )}
           <button onClick={handleLogout} className="text-xs font-bold bg-gray-100 text-gray-600 border border-gray-200 px-4 py-2 rounded-lg hover:bg-gray-200 flex items-center gap-2">

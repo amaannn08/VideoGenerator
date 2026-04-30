@@ -879,6 +879,22 @@ app.put('/api/sessions/:id', async (req, res) => {
   }
 });
 
+app.delete('/api/sessions/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await query('DELETE FROM sessions WHERE id = $1 RETURNING id', [id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
+    }
+
+    res.json({ success: true, id });
+  } catch (error) {
+    console.error('Error deleting session:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
+  }
+});
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 8. MEDIA URL REFRESH (S3 presigned URL rotation)
 // ─────────────────────────────────────────────────────────────────────────────
