@@ -5,5 +5,5 @@ export const MODELS = {
   // Image & Frame Generation
   IMAGE_MODEL: 'gemini-3.1-flash-image-preview',
   // Video Generation (Vertex AI SDK — requires Service Account credentials)
-  VEO31_MODEL: 'veo-3.1-lite-generate-001',
+  VEO31_MODEL: 'veo-3.1-generate-001',
 };
