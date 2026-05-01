@@ -19,12 +19,12 @@ function Modal({ isOpen, onClose, title, children }) {
   if (!isOpen) return null;
   return (
     <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(0,0,0,0.8)' }}>
-      <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:20, width:'100%', maxWidth:960, maxHeight:'calc(100vh - 32px)', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 24px', borderBottom:'1px solid var(--border-subtle)', background:'var(--bg-raised)' }}>
-          <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:16, color:'var(--text-primary)' }}>{title}</h2>
-          <button onClick={onClose} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid var(--border-default)', background:'var(--bg-overlay)', color:'var(--text-secondary)', cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>&times;</button>
+      <div className="bg-white" style={{ border:'1px solid var(--border-default)', borderRadius:20, width:'100%', maxWidth:960, height: 'min(85vh, 800px)', maxHeight:'calc(100vh - 32px)', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+        <div className="bg-gray-50 border-b border-gray-200" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 24px' }}>
+          <h2 className="text-gray-900" style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:16 }}>{title}</h2>
+          <button onClick={onClose} className="bg-white border border-gray-200 text-gray-500 hover:text-gray-900 hover:bg-gray-50 transition-colors" style={{ width:32, height:32, borderRadius:'50%', cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>&times;</button>
         </div>
-        <div style={{ padding:'24px', flex:1, overflowY:'auto', background:'var(--bg-surface)' }}>{children}</div>
+        <div className="bg-white text-gray-900" style={{ padding:'24px', flex:1, overflowY:'auto' }}>{children}</div>
       </div>
     </div>
   );
