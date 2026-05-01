@@ -19,7 +19,7 @@ function Modal({ isOpen, onClose, title, children }) {
   if (!isOpen) return null;
   return (
     <div style={{ position:'fixed', inset:0, zIndex:50, display:'flex', alignItems:'center', justifyContent:'center', padding:16, background:'rgba(0,0,0,0.8)' }}>
-      <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:20, width:'100%', maxWidth:960, height:'min(92vh,920px)', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
+      <div style={{ background:'var(--bg-surface)', border:'1px solid var(--border-default)', borderRadius:20, width:'100%', maxWidth:960, maxHeight:'calc(100vh - 32px)', boxShadow:'0 32px 80px rgba(0,0,0,0.7)', display:'flex', flexDirection:'column', overflow:'hidden' }}>
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 24px', borderBottom:'1px solid var(--border-subtle)', background:'var(--bg-raised)' }}>
           <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:700, fontSize:16, color:'var(--text-primary)' }}>{title}</h2>
           <button onClick={onClose} style={{ width:32, height:32, borderRadius:'50%', border:'1px solid var(--border-default)', background:'var(--bg-overlay)', color:'var(--text-secondary)', cursor:'pointer', fontSize:18, display:'flex', alignItems:'center', justifyContent:'center' }}>&times;</button>
@@ -349,7 +349,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                     onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) genSceneFromPrompt(); }}
                     rows={3}
                     placeholder="Describe this scene… e.g. 'The king walks onto an empty battlefield at dawn, grief-stricken, dialogue: मैं हार गया'"
-                    className="w-full text-xs border border-indigo-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none resize-none bg-indigo-50/50 placeholder:text-gray-300"
+                    className="w-full text-xs border border-indigo-200 rounded-xl px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none resize-none bg-indigo-50/50 text-gray-900 placeholder:text-gray-400"
                   />
                   <Btn
                     onClick={genSceneFromPrompt}
@@ -395,7 +395,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               value={localTitle} 
               onChange={e => setLocalTitle(e.target.value)} 
               onBlur={() => updateScene(scene.id, { title: localTitle })}
-              className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white font-medium outline-none transition-all" 
+              className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white text-gray-900 font-medium outline-none transition-all" 
               placeholder="e.g. The King's Decree"
             />
           </div>
@@ -406,7 +406,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               onChange={e => setLocalSummary(e.target.value)} 
               onBlur={() => updateScene(scene.id, { summary: localSummary })}
               rows={5}
-              className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white resize-none font-medium leading-relaxed outline-none transition-all" 
+              className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white text-gray-900 resize-none font-medium leading-relaxed outline-none transition-all" 
               placeholder="Describe the main action happening in the scene..."
             />
           </div>
@@ -417,7 +417,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                 value={localLocation} 
                 onChange={e => setLocalLocation(e.target.value)} 
                 onBlur={() => updateScene(scene.id, { location: localLocation })}
-                className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white font-medium outline-none transition-all" 
+                className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white text-gray-900 font-medium outline-none transition-all" 
                 placeholder="e.g. Royal Palace Courtyard"
               />
             </div>
@@ -427,7 +427,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                 value={localTimeOfDay} 
                 onChange={e => setLocalTimeOfDay(e.target.value)} 
                 onBlur={() => updateScene(scene.id, { timeOfDay: localTimeOfDay })}
-                className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white font-medium outline-none transition-all" 
+                className="w-full text-sm border shadow-sm rounded-xl p-3.5 focus:ring-4 focus:ring-indigo-500/20 focus:border-indigo-300 bg-white text-gray-900 font-medium outline-none transition-all" 
                 placeholder="e.g. Golden Hour Dusk"
               />
             </div>
@@ -441,9 +441,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       {/* Image Modal */}
       <Modal isOpen={imgModal} onClose={() => setImgModal(false)} title={`${scene.title || `Scene ${index + 1}`} — Image`}>
         <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
-          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex flex-col flex-1 shadow-inner min-h-0">
+          <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 flex flex-col flex-1 shadow-inner min-h-0 text-gray-900">
             <label className="text-xs font-black text-indigo-800 uppercase tracking-widest mb-2 flex items-center gap-1"><FileText className="w-4 h-4" /> Image Prompt</label>
-            <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 mb-2 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-[150px]" />
+            <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 mb-2 focus:ring-4 focus:ring-indigo-500/20 bg-white text-gray-900 resize-none font-medium leading-relaxed min-h-[150px]" />
             
             <div className="space-y-1.5 mb-2 bg-white/50 p-2.5 rounded-xl border border-indigo-100">
               <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
@@ -454,7 +454,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                   onChange={e => setImgCustomInstruction(e.target.value)} 
                   onBlur={() => updateScene(scene.id, { imgCustomInstruction })}
                   placeholder="e.g. 'Make it rain', 'Angry expression'" 
-                  className="flex-1 text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none"
+                  className="flex-1 text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white"
                 />
                 <button onClick={genImgPrompt} disabled={isGenerating} className="text-xs font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg disabled:opacity-50 shrink-0 flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Regenerate</button>
               </div>
@@ -466,7 +466,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
             {hasImg ? (
               <div className="flex-1 flex flex-col min-h-0">
                 <label className="text-xs font-black text-gray-400 uppercase tracking-widest mb-2 block text-center">Storyboard Frame</label>
-                <div className="bg-white rounded-3xl p-4 flex justify-center relative shadow-2xl border border-gray-100 flex-1 min-h-0">
+                <div className="bg-white rounded-3xl p-4 flex justify-center relative shadow-2xl border border-gray-100 flex-1 min-h-0 text-gray-900">
                   <img src={getMediaUrl(activeImageUrl)} onError={refreshImageUrl} alt="Storyboard" className="w-full h-full object-contain rounded-xl" />
                   <button onClick={genImage} disabled={isGenerating} className="absolute bottom-6 right-6 bg-white/95 text-xs px-4 py-2 rounded-full shadow-xl font-black text-gray-800 hover:scale-110 transition-transform flex items-center gap-2"><RefreshCw className="w-3 h-3" /> Re-Render</button>
                 </div>
@@ -482,7 +482,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                     {showImageGenerations && (
                       <div className="p-2 space-y-2 max-h-[300px] overflow-y-auto">
                         {imageGenerations.map((gen, gi) => (
-                          <div key={gen.id} className={`border rounded-xl overflow-hidden ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                          <div key={gen.id} className={`border rounded-xl overflow-hidden text-gray-900 ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
                             <div className="flex items-center justify-between px-2.5 py-1.5">
                               <span className="text-[10px] font-bold text-gray-500">Attempt {gi + 1}</span>
                               <div className="flex items-center gap-1">
@@ -522,7 +522,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       {/* Video Modal */}
       <Modal isOpen={vidModal} onClose={() => setVidModal(false)} title={`${scene.title || `Scene ${index + 1}`} — Video`}>
         <div className="h-full flex flex-col lg:flex-row gap-6 min-h-0">
-            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-2 flex flex-col flex-1 shadow-inner min-h-0">
+            <div className="bg-indigo-50 border border-indigo-100 rounded-2xl p-4 space-y-2 flex flex-col flex-1 shadow-inner min-h-0 text-gray-900">
               <div className="flex justify-between items-center">
                 <label className="text-xs font-black text-indigo-800 uppercase tracking-widest flex items-center gap-1"><Film className="w-4 h-4" /> Video Prompt</label>
                 <select
@@ -551,8 +551,8 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                   className="w-full text-xs text-gray-800 italic bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-1.5 resize-none focus:outline-none focus:ring-2 focus:ring-indigo-400/30"
                 />
                 <div className="flex gap-2">
-                  <input value={localLang} onChange={e => setLocalLang(e.target.value)} onBlur={() => saveDialogue(localDialogue, localTone, localPacing, localLang)} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 w-20 text-center font-semibold focus:outline-none" placeholder="Language" />
-                  <select value={localTone} onChange={e => { setLocalTone(e.target.value); saveDialogue(localDialogue, e.target.value, localPacing, localLang); }} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 flex-1 font-semibold focus:outline-none">
+                  <input value={localLang} onChange={e => setLocalLang(e.target.value)} onBlur={() => saveDialogue(localDialogue, localTone, localPacing, localLang)} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 w-20 text-center font-semibold focus:outline-none text-gray-900 bg-white" placeholder="Language" />
+                  <select value={localTone} onChange={e => { setLocalTone(e.target.value); saveDialogue(localDialogue, e.target.value, localPacing, localLang); }} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 flex-1 font-semibold focus:outline-none text-gray-900 bg-white">
                     <option>commanding and calm</option>
                     <option>heavy and burdened</option>
                     <option>whisper-like and introspective</option>
@@ -560,7 +560,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                     <option>quiet and resolute</option>
                     <option>calm and deliberate</option>
                   </select>
-                  <select value={localPacing} onChange={e => { setLocalPacing(e.target.value); saveDialogue(localDialogue, localTone, e.target.value, localLang); }} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 flex-1 font-semibold focus:outline-none">
+                  <select value={localPacing} onChange={e => { setLocalPacing(e.target.value); saveDialogue(localDialogue, localTone, e.target.value, localLang); }} className="text-[11px] border border-indigo-100 rounded-lg px-2 py-1.5 flex-1 font-semibold focus:outline-none text-gray-900 bg-white">
                     <option>slow with natural pauses</option>
                     <option>slow with long pauses between words</option>
                     <option>each word deliberate</option>
@@ -579,7 +579,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                 </div>
               ) : (
                 <>
-                  <textarea value={localVid} onChange={e => setLocalVid(e.target.value)} onBlur={() => updateScene(scene.id, { videoPrompt: localVid })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 focus:ring-4 focus:ring-indigo-500/20 bg-white resize-none font-medium leading-relaxed min-h-[150px]" />
+                  <textarea value={localVid} onChange={e => setLocalVid(e.target.value)} onBlur={() => updateScene(scene.id, { videoPrompt: localVid })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 focus:ring-4 focus:ring-indigo-500/20 bg-white text-gray-900 resize-none font-medium leading-relaxed min-h-[150px]" />
                   
                   <div className="space-y-1.5 mt-2 bg-white/50 p-2.5 rounded-xl border border-indigo-100">
                     <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
@@ -590,7 +590,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                         onChange={e => setVidCustomInstruction(e.target.value)} 
                         onBlur={() => updateScene(scene.id, { vidCustomInstruction })}
                         placeholder="e.g. 'Slow pan right', 'Character sighs'" 
-                        className="flex-1 text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none"
+                        className="flex-1 text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white"
                       />
                       <button onClick={genVidPrompt} disabled={isGenerating} className="text-xs font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg disabled:opacity-50 shrink-0 flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Regenerate</button>
                     </div>
@@ -619,7 +619,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                       {showGenerations && (
                         <div className="p-2 space-y-2 max-h-[300px] overflow-y-auto">
                           {videoGenerations.map((gen, gi) => (
-                            <div key={gen.id} className={`border rounded-xl overflow-hidden ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                            <div key={gen.id} className={`border rounded-xl overflow-hidden text-gray-900 ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
                               <div className="flex items-center justify-between px-2.5 py-1.5">
                                 <span className="text-[10px] font-bold text-gray-500">Attempt {gi + 1}</span>
                                 <div className="flex items-center gap-1">
@@ -654,7 +654,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               )}
             </div>
             {activeImageUrl && !hasVid && (
-              <div className="flex-1 flex flex-col bg-white border-2 border-gray-50 rounded-3xl p-4 items-center justify-center shadow-sm min-h-0">
+              <div className="flex-1 flex flex-col bg-white border-2 border-gray-50 rounded-3xl p-4 items-center justify-center shadow-sm min-h-0 text-gray-900">
                 <img src={getMediaUrl(activeImageUrl)} onError={refreshImageUrl} className="max-h-full h-auto w-auto max-w-full rounded-2xl object-contain shadow-2xl border-4 border-white mb-2" />
                 <div className="text-[11px] font-black text-gray-400 uppercase tracking-widest">Master Frame</div>
               </div>
