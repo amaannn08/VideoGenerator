@@ -133,7 +133,7 @@ function ModelCard({ model, isSelected, onSelect, type }) {
 
 export default function ModelsPage({ imageModelId, videoModelId, onImageModelChange, onVideoModelChange }) {
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto' }}>
+    <div style={{ width: '100%' }}>
       {/* Page header */}
       <div style={{ marginBottom: 32 }}>
         <h1 style={{
@@ -182,8 +182,8 @@ export default function ModelsPage({ imageModelId, videoModelId, onImageModelCha
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          gap: 12,
+          gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+          gap: 16,
         }}>
           {FAL_IMAGE_MODELS.map(model => (
             <ModelCard
@@ -231,8 +231,8 @@ export default function ModelsPage({ imageModelId, videoModelId, onImageModelCha
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
-          gap: 12,
+          gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+          gap: 16,
         }}>
           {FAL_VIDEO_MODELS.map(model => (
             <ModelCard
