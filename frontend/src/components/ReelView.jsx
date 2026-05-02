@@ -2,10 +2,10 @@ import React from 'react';
 import { RotateCcw, Download, Merge, Film } from 'lucide-react';
 import { Spinner } from './ui/primitives';
 
-const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
-export default function ReelView({ scenes, mergedVideo, setMergedVideo, merging, onMerge, refreshMediaUrl }) {
+export default function ReelView({ scenes, mergedVideo, setMergedVideo, merging, onMerge, refreshMediaUrl, authenticatedFetch }) {
   const allDone = scenes.length > 0 && scenes.every(s => Boolean(s.videoUrl));
   const videoCount = scenes.filter(s => s.videoUrl).length;
 

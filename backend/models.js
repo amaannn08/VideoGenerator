@@ -6,28 +6,28 @@ export const MODELS = {
 // ─── fal.ai Image Model Registry ─────────────────────────────────────────────
 export const FAL_IMAGE_MODELS = [
   {
-    id: 'fal-ai/nano-banana-2',
-    label: 'Nano Banana 2',
-    sublabel: 'Fast Text-to-Image',
-    supportsRef: false,
-    editEndpoint: null,
-    tags: ['fast'],
-    recommended: true,
-    speed: 'fast',
-    arParam: 'aspect_ratio',
-    arValue: '9:16'
-  },
-  {
     id: 'fal-ai/flux/dev',
     label: 'FLUX.1 Dev',
     sublabel: 'Black Forest Labs · Open weights',
     supportsRef: true,
     editEndpoint: 'fal-ai/flux/dev/image-to-image',
     tags: ['fast', 'reference'],
-    recommended: false,
+    recommended: true,
     speed: 'fast',
     arParam: 'image_size',
     arValue: 'portrait_16_9'
+  },
+  {
+    id: 'fal-ai/nano-banana-2',
+    label: 'Nano Banana 2',
+    sublabel: 'Fast Text-to-Image',
+    supportsRef: false,
+    editEndpoint: null,
+    tags: ['fast'],
+    recommended: false,
+    speed: 'fast',
+    arParam: 'aspect_ratio',
+    arValue: '9:16'
   },
   {
     id: 'fal-ai/flux-pro/v1.1',

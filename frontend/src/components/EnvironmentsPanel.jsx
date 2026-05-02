@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { MapPin, Sparkles, Plus, X, Image as ImageIcon, ArrowLeft } from 'lucide-react';
 import { Spinner } from './ui/primitives';
 
-const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const S = {
   label: { fontSize:10, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 },
   grid: { display:'grid', gap:16, gridTemplateColumns:'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', alignItems:'stretch' },
@@ -35,7 +35,7 @@ function EnvPreviewPanel({ env }) {
   );
 }
 
-export default function EnvironmentsPanel({ environments, onUpdate, script, activeEnvId, onEnvSelect }) {
+export default function EnvironmentsPanel({ environments, onUpdate, script, activeEnvId, onEnvSelect, authenticatedFetch }) {
   const [extracting, setExtracting] = useState(false);
   const envs = environments || [];
 
@@ -43,7 +43,7 @@ export default function EnvironmentsPanel({ environments, onUpdate, script, acti
     if (!script?.trim()) return alert('Paste your script first.');
     setExtracting(true);
     try {
-      const r = await fetch(`${API}/api/extract/environments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script})});
+      const r = await authenticatedFetch(`${API}/api/extract/environments`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script})});
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
       onUpdate(d.environments || []);
     } catch(e) { alert(`Extraction failed: ${e.message}`); } finally { setExtracting(false); }

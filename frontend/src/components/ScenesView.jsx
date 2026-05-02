@@ -3,7 +3,7 @@ import { Play, Square, Plus, Film, ArrowLeft } from 'lucide-react';
 import { Spinner } from './ui/primitives';
 import SceneCard from './SceneCard';
 
-const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
 function PreviewPanel({ scene, sceneIdx }) {
@@ -89,6 +89,7 @@ export default function ScenesView({
   refreshMediaUrl, narrativeArc,
   activeSceneId, onSceneSelect,
   imageModelId, videoModelId,
+  authenticatedFetch,
 }) {
   const allDone = scenes.length > 0 && scenes.every(s => Boolean(s.videoUrl));
   const isRunning = autoRunStage === 'running';
@@ -155,6 +156,7 @@ export default function ScenesView({
               refreshMediaUrl={refreshMediaUrl}
               imageModelId={imageModelId}
               videoModelId={videoModelId}
+              authenticatedFetch={authenticatedFetch}
             />
           </div>
           {/* RIGHT — preview panel */}
@@ -225,6 +227,7 @@ export default function ScenesView({
               refreshMediaUrl={refreshMediaUrl}
               imageModelId={imageModelId}
               videoModelId={videoModelId}
+              authenticatedFetch={authenticatedFetch}
             />
           </div>
         ))}

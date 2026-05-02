@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { User, Sparkles, Image as ImageIcon, X, Plus, Crown, ArrowLeft } from 'lucide-react';
 import { Spinner } from './ui/primitives';
 
-const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 const S = {
   label: { fontSize:10, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 },
@@ -41,7 +41,7 @@ function CharPreviewPanel({ char, onGenRef, generating }) {
   );
 }
 
-export default function CharacterPanel({ characters, onUpdate, script, primaryCharacterId, onSetPrimary, activeCharId, onCharSelect }) {
+export default function CharacterPanel({ characters, onUpdate, script, primaryCharacterId, onSetPrimary, activeCharId, onCharSelect, authenticatedFetch }) {
   const [extracting, setExtracting] = useState(false);
   const [generatingRefId, setGeneratingRefId] = useState('');
   
@@ -55,7 +55,7 @@ export default function CharacterPanel({ characters, onUpdate, script, primaryCh
     if (!script?.trim()) return alert('Paste your script first.');
     setExtracting(true);
     try {
-      const r = await fetch(`${API}/api/extract/character`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script})});
+      const r = await authenticatedFetch(`${API}/api/extract/character`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({script})});
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
       const normalized = (Array.isArray(d.characters)?d.characters:d.character?[d.character]:[]).filter(c=>c&&typeof c==='object').map((c,i)=>({id:c.id||`char_${i+1}`,name:c.name||'',description:c.description||'',keyFeature:c.keyFeature||'',referenceImageUrl:c.referenceImageUrl||null})).filter(c=>c.name||c.description||c.keyFeature);
       onUpdate(normalized); onSetPrimary(normalized[0]?.id||'');
@@ -66,7 +66,7 @@ export default function CharacterPanel({ characters, onUpdate, script, primaryCh
     if (!char.description) return alert('Add a character description first.');
     setGeneratingRefId(char.id);
     try {
-      const r = await fetch(`${API}/api/image`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagePrompt:`CHARACTER: ${char.description}\nCHARACTER_KEY_FEATURE: ${char.keyFeature}\nACTION: Standing still, facing camera, neutral expression\nENVIRONMENT: Plain dark background\nLIGHTING: Soft diffused front lighting\nCAMERA: Medium portrait shot, 9:16\nSTYLE: cinematic, ultra realistic, 4k`})});
+      const r = await authenticatedFetch(`${API}/api/image`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({imagePrompt:`CHARACTER: ${char.description}\nCHARACTER_KEY_FEATURE: ${char.keyFeature}\nACTION: Standing still, facing camera, neutral expression\nENVIRONMENT: Plain dark background\nLIGHTING: Soft diffused front lighting\nCAMERA: Medium portrait shot, 9:16\nSTYLE: cinematic, ultra realistic, 4k`})});
       const d = await r.json(); if (!r.ok) throw new Error(d.error);
       onUpdate(chars.map(c=>c.id===char.id?{...c,referenceImageUrl:d.imageUrl}:c));
     } catch(e) { alert(`Ref image failed: ${e.message}`); } finally { setGeneratingRefId(''); }

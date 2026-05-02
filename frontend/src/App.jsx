@@ -11,7 +11,7 @@ import ReelView from './components/ReelView';
 import ModelsPage from './components/ModelsPage';
 import { DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './falModels';
 
-const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
 const EMPTY_CHARACTER = { id:'', name:'', description:'', keyFeature:'', referenceImageUrl:null };
@@ -62,6 +62,17 @@ export default function App() {
       .then(d => { if (d.valid) setAuthToken(token); else { localStorage.removeItem('ai-video-token'); localStorage.removeItem('ai-video-token-exp'); } })
       .catch(() => { if (Date.now() < exp) setAuthToken(token); })
       .finally(() => setAuthChecked(true));
+  }, []);
+
+  const authenticatedFetch = useCallback((url, options = {}) => {
+    const token = localStorage.getItem('ai-video-token');
+    return fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'x-auth-token': token,
+      },
+    });
   }, []);
 
   // ── Persistent state ───────────────────────────────────────────────────
@@ -122,12 +133,12 @@ export default function App() {
   const refreshMediaUrl = useCallback(async (url) => {
     if (!url || !url.startsWith('http')) return url;
     try {
-      const r = await fetch(`${API}/api/media/refresh`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}) });
+      const r = await authenticatedFetch(`${API}/api/media/refresh`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({url}) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       return d.url || url;
     } catch { return url; }
-  }, []);
+  }, [authenticatedFetch]);
 
   const refreshSessionMediaUrls = useCallback(async (sessionData) => {
     const sceneList = Array.isArray(sessionData?.scenes) ? sessionData.scenes : [];
@@ -141,7 +152,7 @@ export default function App() {
     if (sessionData?.mergedVideo?.startsWith('http')) urls.push(sessionData.mergedVideo);
     if (!urls.length) return sessionData;
     try {
-      const r = await fetch(`${API}/api/media/refresh-batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({urls}) });
+      const r = await authenticatedFetch(`${API}/api/media/refresh-batch`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({urls}) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       const refreshed = d.urls || {};
@@ -157,21 +168,21 @@ export default function App() {
         mergedVideo: refreshed[sessionData.mergedVideo]||sessionData.mergedVideo,
       };
     } catch { return sessionData; }
-  }, []);
+  }, [authenticatedFetch]);
 
   // ── Fetch sessions list ────────────────────────────────────────────────
   useEffect(() => {
     if (!authToken) return;
-    fetch(`${API}/api/sessions`)
+    authenticatedFetch(`${API}/api/sessions`)
       .then(r=>r.json())
       .then(d=>{ if(d.sessions) setAllSessions(d.sessions); })
       .catch(console.error);
-  }, [sessionId, narrativeArc, authToken]);
+  }, [sessionId, narrativeArc, authToken, authenticatedFetch]);
 
   // ── Load session ───────────────────────────────────────────────────────
   useEffect(() => {
     if (!sessionId) { setIsInitializing(false); return; }
-    fetch(`${API}/api/sessions/${sessionId}`)
+    authenticatedFetch(`${API}/api/sessions/${sessionId}`)
       .then(r=>r.json())
       .then(async data => {
         if (!data.error) {
@@ -190,7 +201,7 @@ export default function App() {
       })
       .catch(console.error)
       .finally(() => setIsInitializing(false));
-  }, [sessionId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionId, authenticatedFetch, refreshSessionMediaUrls]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Auto-save ──────────────────────────────────────────────────────────
   useEffect(() => {
@@ -201,20 +212,20 @@ export default function App() {
       try {
         const body = JSON.stringify({ script, globalCharacter:activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage });
         if (!sessionId) {
-          const res = await fetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+          const res = await authenticatedFetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body });
           const d = await res.json();
           if (d.sessionId) {
             setSessionId(d.sessionId);
             window.history.replaceState({}, '', '?session='+d.sessionId);
-            fetch(`${API}/api/sessions`).then(r=>r.json()).then(d=>{ if(d.sessions) setAllSessions(d.sessions); }).catch(()=>{});
+            authenticatedFetch(`${API}/api/sessions`).then(r=>r.json()).then(d=>{ if(d.sessions) setAllSessions(d.sessions); }).catch(()=>{});
           }
         } else {
-          await fetch(`${API}/api/sessions/${sessionId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
+          await authenticatedFetch(`${API}/api/sessions/${sessionId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
         }
       } catch(err) { console.error('Auto-save error:', err); }
     }, 1500);
     return () => clearTimeout(t);
-  }, [script, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage, sessionId, isInitializing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [script, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage, sessionId, isInitializing, authenticatedFetch, activeCharacter]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Scene helpers ──────────────────────────────────────────────────────
   const updateScene  = useCallback((id, updates) => setScenes(prev=>prev.map(s=>s.id===id?{...s,...updates}:s)), [setScenes]);
@@ -241,7 +252,7 @@ export default function App() {
     if (!sessionId) return;
     if (!window.confirm('Delete this session permanently?')) return;
     try {
-      const r = await fetch(`${API}/api/sessions/${sessionId}`, { method:'DELETE' });
+      const r = await authenticatedFetch(`${API}/api/sessions/${sessionId}`, { method:'DELETE' });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error||'Failed');
       if (sseRef.current) sseRef.current.close();
@@ -260,13 +271,13 @@ export default function App() {
     try {
       let sid = sessionId;
       if (!sid) {
-        const res = await fetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
+        const res = await authenticatedFetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
         const data = await res.json();
         sid = data.sessionId;
         setSessionId(sid);
         window.history.replaceState({}, '', '?session='+sid);
       }
-      const r = await fetch(`${API}/api/scenes`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
+      const r = await authenticatedFetch(`${API}/api/scenes`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       const extractedChars = normalizeCharacters(d.characters||d.character);
@@ -349,7 +360,7 @@ export default function App() {
       scenes, globalCharacter:activeCharacter, globalCharacters, globalEnvironments,
       targetLanguage, sessionId, imageModelId, videoModelId,
     });
-    fetch(`${API}/api/auto-run`, { method:'POST', headers:{'Content-Type':'application/json'}, body })
+    authenticatedFetch(`${API}/api/auto-run`, { method:'POST', headers:{'Content-Type':'application/json'}, body })
       .then(async res => {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
@@ -381,7 +392,7 @@ export default function App() {
     try {
       const videoUrls = scenes.map(s=>(s.videoGenerations?.find(g=>g.isFinal)?.videoUrl||s.videoUrl)).filter(Boolean);
       if (!videoUrls.length) throw new Error('No videos to merge');
-      const r = await fetch(`${API}/api/merge`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoUrls}) });
+      const r = await authenticatedFetch(`${API}/api/merge`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({videoUrls}) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       setMergedVideo(d.videoUrl);
@@ -440,6 +451,7 @@ export default function App() {
             script={script}
             activeCharId={activeCharId}
             onCharSelect={setActiveCharId}
+            authenticatedFetch={authenticatedFetch}
           />
         );
       case 'environments':
@@ -450,6 +462,7 @@ export default function App() {
             script={script}
             activeEnvId={activeEnvId}
             onEnvSelect={setActiveEnvId}
+            authenticatedFetch={authenticatedFetch}
           />
         );
       case 'reel':
@@ -461,6 +474,7 @@ export default function App() {
             merging={merging}
             onMerge={handleMerge}
             refreshMediaUrl={refreshMediaUrl}
+            authenticatedFetch={authenticatedFetch}
           />
         );
       case 'scenes':
@@ -485,6 +499,7 @@ export default function App() {
             onSceneSelect={setActiveSceneId}
             imageModelId={imageModelId}
             videoModelId={videoModelId}
+            authenticatedFetch={authenticatedFetch}
           />
         );
     }

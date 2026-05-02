@@ -23,6 +23,11 @@ const googleAuth = new GoogleAuth({
 
 // Configure fal with API key
 dotenv.config();
+if (!process.env.FAL_KEY) {
+  console.error('[Fal] CRITICAL: FAL_KEY is missing from environment variables!');
+} else {
+  console.log(`[Fal] API Key loaded (starts with: ${process.env.FAL_KEY.substring(0, 5)}...)`);
+}
 fal.config({ credentials: process.env.FAL_KEY });
 
 // Language code map for Google Translate
@@ -44,10 +49,10 @@ if (process.env.GOOGLE_CREDENTIALS_BASE64) {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Ensure tmp directory exists
-const TMP_DIR = path.join(__dirname, 'tmp');
+// Ensure tmp directory exists in a writable location for AWS
+const TMP_DIR = '/tmp/ai-video-gen';
 if (!fs.existsSync(TMP_DIR)) {
-  fs.mkdirSync(TMP_DIR);
+  fs.mkdirSync(TMP_DIR, { recursive: true });
 }
 
 ffmpeg.setFfmpegPath(ffmpegStatic);
@@ -168,49 +173,105 @@ function getErrorMessage(error) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AUTH
+// AUTH (Database Persistent)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
-const authTokens = new Map(); // token -> expiresAt
 
 function randomToken() {
   return Array.from({ length: 32 }, () => Math.random().toString(36)[2]).join('');
 }
 
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body;
-  const validUser = process.env.APP_USERNAME;
-  const validPass = process.env.APP_PASSWORD;
-
-  if (!validUser || !validPass) {
-    return res.status(500).json({ error: 'Auth not configured on server' });
+// Middleware to check authentication
+async function authenticate(req, res, next) {
+  const token = req.headers['x-auth-token'];
+  if (!token) {
+    return res.status(401).json({ error: 'Missing authentication token' });
   }
 
-  if (username !== validUser || password !== validPass) {
-    return res.status(401).json({ error: 'Invalid credentials' });
-  }
+  try {
+    const result = await query('SELECT username, expires_at FROM auth_tokens WHERE token = $1', [token]);
+    if (result.rows.length === 0) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
 
-  const token = randomToken();
-  authTokens.set(token, Date.now() + TOKEN_TTL_MS);
-  res.json({ token, expiresIn: TOKEN_TTL_MS });
+    const { expires_at } = result.rows[0];
+    if (Date.now() > parseInt(expires_at)) {
+      await query('DELETE FROM auth_tokens WHERE token = $1', [token]);
+      return res.status(401).json({ error: 'Token expired' });
+    }
+
+    // Token valid
+    next();
+  } catch (error) {
+    console.error('Auth middleware error:', error);
+    res.status(500).json({ error: 'Internal auth error' });
+  }
+}
+
+// Debug logging middleware for AWS headers
+app.use((req, res, next) => {
+  if (process.env.NODE_ENV === 'development' || true) { // Enabled for now to debug your issue
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    if (req.headers['x-auth-token']) {
+      console.log(`  [Auth] x-auth-token present`);
+    } else if (req.url.startsWith('/api') && !req.url.includes('/auth/')) {
+      console.log(`  [Auth] WARNING: x-auth-token MISSING for protected route`);
+    }
+  }
+  next();
 });
 
-app.get('/api/auth/verify', (req, res) => {
-  const token = req.headers['x-auth-token'];
-  if (!token || !authTokens.has(token)) return res.status(401).json({ valid: false });
-  if (Date.now() > authTokens.get(token)) {
-    authTokens.delete(token);
-    return res.status(401).json({ valid: false, reason: 'expired' });
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const validUser = process.env.APP_USERNAME;
+    const validPass = process.env.APP_PASSWORD;
+
+    if (!validUser || !validPass) {
+      return res.status(500).json({ error: 'Auth not configured on server' });
+    }
+
+    if (username !== validUser || password !== validPass) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const token = randomToken();
+    const expiresAt = Date.now() + TOKEN_TTL_MS;
+    
+    await query('INSERT INTO auth_tokens (token, username, expires_at) VALUES ($1, $2, $3)', [token, username, expiresAt]);
+    
+    res.json({ token, expiresIn: TOKEN_TTL_MS });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ error: 'Login failed' });
   }
-  res.json({ valid: true });
+});
+
+app.get('/api/auth/verify', async (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (!token) return res.status(401).json({ valid: false });
+  
+  try {
+    const result = await query('SELECT expires_at FROM auth_tokens WHERE token = $1', [token]);
+    if (result.rows.length === 0) return res.status(401).json({ valid: false });
+    
+    if (Date.now() > parseInt(result.rows[0].expires_at)) {
+      await query('DELETE FROM auth_tokens WHERE token = $1', [token]);
+      return res.status(401).json({ valid: false, reason: 'expired' });
+    }
+    
+    res.json({ valid: true });
+  } catch (error) {
+    res.status(500).json({ valid: false });
+  }
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 1. SCENE SPLITTING
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/scenes', async (req, res) => {
+app.post('/api/scenes', authenticate, async (req, res) => {
   try {
     const { script, sceneCount = 3 } = req.body;
     if (!script) return res.status(400).json({ error: 'script is required' });
@@ -241,7 +302,7 @@ app.post('/api/scenes', async (req, res) => {
 // 1b. SINGLE SCENE GENERATION FROM FREE-TEXT PROMPT
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/scenes/generate-one', async (req, res) => {
+app.post('/api/scenes/generate-one', authenticate, async (req, res) => {
   try {
     const { userPrompt, globalCharacter, sceneIndex = 0, totalScenes = 1 } = req.body;
     if (!userPrompt) return res.status(400).json({ error: 'userPrompt is required' });
@@ -267,37 +328,13 @@ app.post('/api/scenes/generate-one', async (req, res) => {
 // 2a. IMAGE PROMPT GENERATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 1b. SINGLE SCENE GENERATION FROM FREE-TEXT PROMPT
-// ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/scenes/generate-one', async (req, res) => {
-  try {
-    const { userPrompt, globalCharacter, sceneIndex = 0, totalScenes = 1 } = req.body;
-    if (!userPrompt) return res.status(400).json({ error: 'userPrompt is required' });
-
-    const promptText = SYSTEM_PROMPTS.getSceneFromPromptPrompt(userPrompt, globalCharacter, sceneIndex, totalScenes);
-
-    const completion = await openai.chat.completions.create({
-      messages: [{ role: 'user', content: promptText }],
-      model: MODELS.TEXT_MODEL,
-    });
-
-    let data = extractJson(completion.choices[0].message.content);
-    if (!data) data = JSON.parse(completion.choices[0].message.content);
-
-    res.json({ scene: data });
-  } catch (error) {
-    console.error('Error in /api/scenes/generate-one:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXTRACT CHARACTER FROM SCRIPT
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/extract/character', async (req, res) => {
+app.post('/api/extract/character', authenticate, async (req, res) => {
   try {
     const { script } = req.body;
     if (!script) return res.status(400).json({ error: 'script is required' });
@@ -322,7 +359,7 @@ app.post('/api/extract/character', async (req, res) => {
 // EXTRACT ENVIRONMENTS FROM SCRIPT
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/extract/environments', async (req, res) => {
+app.post('/api/extract/environments', authenticate, async (req, res) => {
   try {
     const { script } = req.body;
     if (!script) return res.status(400).json({ error: 'script is required' });
@@ -346,7 +383,7 @@ app.post('/api/extract/environments', async (req, res) => {
 // TRANSLATE DIALOGUE (Google Cloud Translation API v2)
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/translate', async (req, res) => {
+app.post('/api/translate', authenticate, async (req, res) => {
   try {
     const { text, targetLanguage } = req.body;
     if (!text) return res.status(400).json({ error: 'text is required' });
@@ -382,7 +419,7 @@ app.post('/api/translate', async (req, res) => {
 // 2a. IMAGE PROMPT GENERATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/prompts/image', async (req, res) => {
+app.post('/api/prompts/image', authenticate, async (req, res) => {
   try {
     const { scene, character, previousSceneImageDesc, sceneIndex = 0, totalScenes = 1, customInstruction, environment } = req.body;
     if (!scene) return res.status(400).json({ error: 'scene is required' });
@@ -409,7 +446,7 @@ app.post('/api/prompts/image', async (req, res) => {
 // 2b. VIDEO PROMPT GENERATION
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/prompts/video', async (req, res) => {
+app.post('/api/prompts/video', authenticate, async (req, res) => {
   try {
     const { scene, character, sceneIndex = 0, totalScenes = 1, customInstruction, environment, targetLanguage } = req.body;
     if (!scene) return res.status(400).json({ error: 'scene is required' });
@@ -467,7 +504,7 @@ app.post('/api/prompts/video', async (req, res) => {
 // 3. IMAGE GENERATION (Gemini Flash)
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/image', async (req, res) => {
+app.post('/api/image', authenticate, async (req, res) => {
   try {
     const { imagePrompt, referenceImage, modelId, options } = req.body;
     if (!imagePrompt) return res.status(400).json({ error: 'imagePrompt is required' });
@@ -482,11 +519,15 @@ app.post('/api/image', async (req, res) => {
   }
 });
 
-app.post('/api/video', async (req, res) => {
+app.get('/api/models', authenticate, (_req, res) => {
+  res.json({ imageModels: FAL_IMAGE_MODELS, videoModels: FAL_VIDEO_MODELS });
+});
+
+app.post('/api/video', authenticate, async (req, res) => {
   try {
     const { videoPrompt, imageUrl, duration, dialogue, modelId, options } = req.body;
     if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
-    const publicUrl = await withRetry(() => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId }));
+    const publicUrl = await withRetry(() => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID }));
     res.json({ videoUrl: publicUrl });
   } catch (error) {
     console.error(`Error in /api/video [model=${req.body?.modelId}]:`, error.message);
@@ -495,14 +536,6 @@ app.post('/api/video', async (req, res) => {
     }
     res.status(500).json({ error: error.message });
   }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// SERVE MODEL REGISTRY
-// ─────────────────────────────────────────────────────────────────────────────
-
-app.get('/api/models', (_req, res) => {
-  res.json({ imageModels: FAL_IMAGE_MODELS, videoModels: FAL_VIDEO_MODELS });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -662,20 +695,7 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   }
 }
 
-app.post('/api/video', async (req, res) => {
-  try {
-    const { videoPrompt, imageUrl, duration, dialogue, modelId } = req.body;
-    if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
-    const videoUrl = await generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID });
-    res.json({ videoUrl });
-  } catch (error) {
-    console.error('Error in /api/video:', error);
-    if (error.body && error.body.detail) {
-      console.error('Validation details:', JSON.stringify(error.body.detail, null, 2));
-    }
-    res.status(500).json({ error: error.message });
-  }
-});
+// Duplicate removed
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. MERGE VIDEOS (FFmpeg)
@@ -724,7 +744,7 @@ async function mergeVideos(videoUrls, s3Prefix = 'merged') {
   return publicUrl;
 }
 
-app.post('/api/merge', async (req, res) => {
+app.post('/api/merge', authenticate, async (req, res) => {
   try {
     const { videoUrls } = req.body;
     if (!videoUrls || videoUrls.length === 0) return res.status(400).json({ error: 'No videos provided' });
@@ -740,7 +760,7 @@ app.post('/api/merge', async (req, res) => {
 // 6. AUTO-RUN PIPELINE (SSE) — The "Run Everything" endpoint
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/auto-run', async (req, res) => {
+app.post('/api/auto-run', authenticate, async (req, res) => {
   const { scenes, globalCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId, imageModelId, videoModelId } = req.body;
 
   if (!scenes || scenes.length === 0) {
@@ -995,7 +1015,7 @@ app.post('/api/auto-run', async (req, res) => {
 // 7. SESSIONS
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/sessions', async (req, res) => {
+app.post('/api/sessions', authenticate, async (req, res) => {
   try {
     const { script, globalCharacter, globalCharacters, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
     const sessionId = Math.random().toString(36).substr(2, 9);
@@ -1014,7 +1034,7 @@ app.post('/api/sessions', async (req, res) => {
   }
 });
 
-app.get('/api/sessions', async (req, res) => {
+app.get('/api/sessions', authenticate, async (req, res) => {
   try {
     const result = await query('SELECT id, narrative_arc, updated_at FROM sessions ORDER BY updated_at DESC');
     res.json({ sessions: result.rows });
@@ -1024,7 +1044,7 @@ app.get('/api/sessions', async (req, res) => {
   }
 });
 
-app.get('/api/sessions/:id', async (req, res) => {
+app.get('/api/sessions/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await query('SELECT * FROM sessions WHERE id = $1', [id]);
@@ -1061,7 +1081,7 @@ app.get('/api/sessions/:id', async (req, res) => {
   }
 });
 
-app.put('/api/sessions/:id', async (req, res) => {
+app.put('/api/sessions/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const { script, globalCharacter, globalCharacters, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage } = req.body;
@@ -1095,7 +1115,7 @@ app.put('/api/sessions/:id', async (req, res) => {
   }
 });
 
-app.delete('/api/sessions/:id', async (req, res) => {
+app.delete('/api/sessions/:id', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await query('DELETE FROM sessions WHERE id = $1 RETURNING id', [id]);
@@ -1115,7 +1135,7 @@ app.delete('/api/sessions/:id', async (req, res) => {
 // 8. MEDIA URL REFRESH (S3 presigned URL rotation)
 // ─────────────────────────────────────────────────────────────────────────────
 
-app.post('/api/media/refresh', async (req, res) => {
+app.post('/api/media/refresh', authenticate, async (req, res) => {
   try {
     const { url } = req.body;
     if (!url || typeof url !== 'string') {
@@ -1135,7 +1155,7 @@ app.post('/api/media/refresh', async (req, res) => {
   }
 });
 
-app.post('/api/media/refresh-batch', async (req, res) => {
+app.post('/api/media/refresh-batch', authenticate, async (req, res) => {
   try {
     const { urls } = req.body;
     if (!Array.isArray(urls)) {

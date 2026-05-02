@@ -2,7 +2,7 @@ import React, { useState, useEffect, memo, useRef } from 'react';
 import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile, Trash2, ChevronDown, ChevronUp, History } from 'lucide-react';
 import { FAL_VIDEO_MODELS } from '../falModels';
 
-const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
+const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
 
 function Spinner({ size = 14, color = 'border-[var(--amber)]' }) {
@@ -33,7 +33,7 @@ function Modal({ isOpen, onClose, title, children }) {
 
 const STAGES = ['draft', 'generating_image_prompt', 'image_prompt_ready', 'image_generating', 'image_done', 'generating_video_prompt', 'video_prompt_ready', 'video_generating', 'video_done'];
 
-const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalCharacters = [], globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl, imageModelId, videoModelId }) => {
+const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalCharacters = [], globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl, imageModelId, videoModelId, authenticatedFetch }) => {
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
@@ -158,7 +158,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
     if (!scenePromptInput.trim()) return;
     setGeneratingScene(true);
     try {
-      const r = await fetch(`${API}/api/scenes/generate-one`, {
+      const r = await authenticatedFetch(`${API}/api/scenes/generate-one`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ userPrompt: scenePromptInput, globalCharacter: activeCharacter, sceneIndex: index, totalScenes }),
@@ -177,7 +177,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const genImgPrompt = async () => {
     updateScene(scene.id, { status: 'generating_image_prompt' });
     try {
-      const r = await fetch(`${API}/api/prompts/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: activeCharacter, previousSceneImageDesc: previousSceneImage, sceneIndex: index, totalScenes, customInstruction: imgCustomInstruction, environment: activeEnvironment }), signal: signal() });
+      const r = await authenticatedFetch(`${API}/api/prompts/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scene, character: activeCharacter, previousSceneImageDesc: previousSceneImage, sceneIndex: index, totalScenes, customInstruction: imgCustomInstruction, environment: activeEnvironment }), signal: signal() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       updateScene(scene.id, { imagePrompt: d.imagePrompt, status: 'image_prompt_ready' });
@@ -192,7 +192,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         aspect_ratio: localAspectRatio === '9:16' ? 'portrait_16_9' : localAspectRatio === '16:9' ? 'landscape_16_9' : 'square',
         negative_prompt: localNegativePrompt
       };
-      const r = await fetch(`${API}/api/image`, { 
+      const r = await authenticatedFetch(`${API}/api/image`, { 
         method: 'POST', 
         headers: { 'Content-Type': 'application/json' }, 
         body: JSON.stringify({ 
@@ -238,7 +238,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const genVidPrompt = async () => {
     updateScene(scene.id, { status: 'generating_video_prompt' });
     try {
-      const r = await fetch(`${API}/api/prompts/video`, {
+      const r = await authenticatedFetch(`${API}/api/prompts/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -268,7 +268,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         cfg_scale: localCfgScale,
         generate_audio: localGenAudio
       };
-      const r = await fetch(`${API}/api/video`, {
+      const r = await authenticatedFetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 

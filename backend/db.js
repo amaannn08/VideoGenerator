@@ -40,6 +40,12 @@ export const initDb = async () => {
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS global_environments JSONB;`,
     `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS target_language TEXT DEFAULT 'Hindi';`,
+    `CREATE TABLE IF NOT EXISTS auth_tokens (
+      token TEXT PRIMARY KEY,
+      username TEXT NOT NULL,
+      expires_at BIGINT NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );`
   ];
   
   try {
