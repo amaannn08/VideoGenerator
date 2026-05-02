@@ -1,5 +1,6 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
 import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile, Trash2, ChevronDown, ChevronUp, History } from 'lucide-react';
+import { FAL_VIDEO_MODELS } from '../falModels';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -71,6 +72,18 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   useEffect(() => setLocalDuration(scene.duration || 8), [scene.duration]);
   useEffect(() => setImgCustomInstruction(scene.imgCustomInstruction || ''), [scene.imgCustomInstruction]);
   useEffect(() => setVidCustomInstruction(scene.vidCustomInstruction || ''), [scene.vidCustomInstruction]);
+  
+  // Snap duration when video model changes to ensure it's always valid
+  useEffect(() => {
+    const modelDef = FAL_VIDEO_MODELS.find(m => m.id === videoModelId);
+    if (modelDef && modelDef.allowedDurations && !modelDef.allowedDurations.includes(localDuration)) {
+      const snapped = modelDef.allowedDurations.reduce((prev, curr) => 
+        Math.abs(curr - localDuration) < Math.abs(prev - localDuration) ? curr : prev
+      );
+      setLocalDuration(snapped);
+      updateScene(scene.id, { duration: snapped });
+    }
+  }, [videoModelId]);
 
   const getAutoEnvironment = () => (
     (globalEnvironments || []).find(e =>
@@ -288,8 +301,27 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
           <div style={{ flex:1, minWidth:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
               <span style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.1em' }}>Scene {index + 1}</span>
-              <select value={localDuration} onChange={e => { const d=parseInt(e.target.value,10); setLocalDuration(d); updateScene(scene.id,{duration:d}); }} style={{ background:'var(--bg-overlay)', color:'var(--text-secondary)', fontSize:11, fontWeight:700, padding:'3px 6px', borderRadius:6, border:'1px solid var(--border-subtle)', cursor:'pointer' }}>
-                <option value={4}>4s</option><option value={6}>6s</option><option value={8}>8s</option>
+              <select 
+                value={localDuration} 
+                onChange={e => { 
+                  const d = parseInt(e.target.value, 10); 
+                  setLocalDuration(d); 
+                  updateScene(scene.id, { duration: d }); 
+                }} 
+                style={{ 
+                  background: 'var(--bg-overlay)', 
+                  color: 'var(--text-secondary)', 
+                  fontSize: 11, 
+                  fontWeight: 700, 
+                  padding: '3px 6px', 
+                  borderRadius: 6, 
+                  border: '1px solid var(--border-subtle)', 
+                  cursor: 'pointer' 
+                }}
+              >
+                {(FAL_VIDEO_MODELS.find(m => m.id === videoModelId)?.allowedDurations || [4, 6, 8]).map(d => (
+                  <option key={d} value={d}>{d}s</option>
+                ))}
               </select>
               {scene.emotionalTone && <span style={{ fontSize:10, color:'var(--amber)', background:'var(--amber-glow)', border:'1px solid rgba(245,166,35,0.2)', padding:'2px 8px', borderRadius:999, fontWeight:600, maxWidth:140, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={scene.emotionalTone}>{scene.emotionalTone.split(',')[0]}</span>}
             </div>

@@ -538,12 +538,15 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   const modelDef = FAL_VIDEO_MODELS.find(m => m.id === modelId) || FAL_VIDEO_MODELS[0];
 
   const durInt = parseInt(duration) || 5;
-  // Luma Ray 2 only accepts "5s" or "9s"
-  const lumaDurationStr = durInt <= 5 ? '5s' : '9s';
-  // Kling only accepts "5" or "10" (no 's')
-  const klingDurationStr = durInt <= 5 ? '5' : '10';
-  // Generic fallback
-  const durationStr = lumaDurationStr;
+  const allowed = modelDef.allowedDurations || [5];
+  // Snap to nearest allowed duration
+  const snappedDur = allowed.reduce((prev, curr) => 
+    Math.abs(curr - durInt) < Math.abs(prev - durInt) ? curr : prev
+  );
+
+  const durationStr = `${snappedDur}s`;
+  const klingDurationStr = `${snappedDur}`;
+  const veoDurationStr = `${snappedDur}s`;
 
   let finalImageUrl = imageUrl;
   const hasPublicImage = finalImageUrl?.startsWith('http');
