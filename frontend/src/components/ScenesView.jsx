@@ -210,7 +210,7 @@ export default function ScenesView({
         </div>
       )}
 
-      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))', alignItems: 'stretch' }}>
+      <div style={{ display: 'grid', gap: 16, gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', alignItems: 'stretch' }}>
         {scenes.map((scene, i) => (
           <div key={scene.id} style={{ cursor: 'pointer' }} onClick={() => onSceneSelect(scene.id)}>
             <SceneCard

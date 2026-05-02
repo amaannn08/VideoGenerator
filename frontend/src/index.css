@@ -85,7 +85,7 @@ html, body, #root {
 .app-shell {
   display: flex;
   flex-direction: column;
-  height: 200vh;
+  height: 100vh;
   overflow: hidden;
   background: var(--bg-base);
 }
@@ -111,7 +111,7 @@ html, body, #root {
 .app-body {
   display: flex;
   margin-top: var(--topbar-h);
-  height: calc(200vh - var(--topbar-h));
+  height: calc(100vh - var(--topbar-h));
   min-height: 0;
   overflow: hidden;
 }

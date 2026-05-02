@@ -182,7 +182,7 @@ export default function ModelsPage({ imageModelId, videoModelId, onImageModelCha
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))',
           gap: 16,
         }}>
           {FAL_IMAGE_MODELS.map(model => (
@@ -231,7 +231,7 @@ export default function ModelsPage({ imageModelId, videoModelId, onImageModelCha
 
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fill, minmax(420px, 1fr))',
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))',
           gap: 16,
         }}>
           {FAL_VIDEO_MODELS.map(model => (

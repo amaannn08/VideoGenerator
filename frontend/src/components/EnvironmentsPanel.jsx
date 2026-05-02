@@ -5,7 +5,7 @@ import { Spinner } from './ui/primitives';
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const S = {
   label: { fontSize:10, fontWeight:700, letterSpacing:'0.12em', textTransform:'uppercase', color:'var(--text-muted)', display:'block', marginBottom:5 },
-  grid: { display:'grid', gap:16, gridTemplateColumns:'repeat(auto-fill, minmax(420px, 1fr))', alignItems:'stretch' },
+  grid: { display:'grid', gap:16, gridTemplateColumns:'repeat(auto-fill, minmax(min(100%, 420px), 1fr))', alignItems:'stretch' },
 };
 
 function EnvPreviewPanel({ env }) {
