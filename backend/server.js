@@ -12,13 +12,17 @@ import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
 import { toVeoPrompt } from './veoPrompt.js';
 import { initDb, query } from './db.js';
-import { GoogleGenAI } from '@google/genai';
+import { fal } from '@fal-ai/client';
 import { GoogleAuth } from 'google-auth-library';
+import { FAL_IMAGE_MODELS, FAL_VIDEO_MODELS, DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './models.js';
 
-// Google Auth client for Translation API + Vertex AI
+// Google Auth client for Translation API only
 const googleAuth = new GoogleAuth({
   scopes: ['https://www.googleapis.com/auth/cloud-platform'],
 });
+
+// Configure fal with API key
+fal.config({ credentials: process.env.FAL_KEY });
 
 // Language code map for Google Translate
 const LANG_CODES = {
@@ -67,13 +71,6 @@ const openai = new OpenAI({
 });
 
 const GOOGLE_API_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-
-// Init Google GenAI SDK (Vertex AI mode — enables generateAudio, personGeneration, resolution)
-const genaiClient = new GoogleGenAI({
-  vertexai: true,
-  project: 'gen-lang-client-0653675781',
-  location: 'us-central1',
-});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -472,60 +469,9 @@ app.post('/api/prompts/video', async (req, res) => {
 
 app.post('/api/image', async (req, res) => {
   try {
-    const { imagePrompt, referenceImage } = req.body;
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.IMAGE_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
-
-    const parts = [];
-
-    // Attach reference image for visual character continuity (Gemini is multimodal)
-    if (referenceImage && referenceImage.startsWith('/tmp/')) {
-      const base64Data = tmpFileToBase64(referenceImage);
-      if (base64Data) {
-        parts.push({
-          inlineData: {
-            data: base64Data,
-            mimeType: 'image/jpeg'
-          }
-        });
-        parts.push({ text: 'Use the provided image as a strict visual reference for the character\'s face, skin tone, body build, clothing, and overall style. The generated image MUST maintain perfect visual continuity with this reference.' });
-      }
-    } else if (referenceImage && referenceImage.startsWith('data:')) {
-      const mimeType = referenceImage.match(/data:(.*?);/)[1];
-      const base64Data = referenceImage.replace(/^data:image\/\w+;base64,/, '');
-      parts.push({
-        inlineData: { data: base64Data, mimeType }
-      });
-      parts.push({ text: 'Use the provided image as a strict visual reference for the character\'s face, skin tone, body build, clothing, and overall style. The generated image MUST maintain perfect visual continuity with this reference.' });
-    }
-
-    parts.push({ text: imagePrompt + ' 9:16 aspect ratio' });
-
-    const data = await withRetry(async () => {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ role: 'user', parts }],
-          generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-        }),
-      });
-
-      const json = await response.json();
-      if (!response.ok) throw new Error(json.error?.message || 'Gemini Image API failed');
-      return json;
-    });
-
-    const imageParts = data.candidates?.[0]?.content?.parts?.filter(p => p.inlineData || p.inline_data) || [];
-    if (!imageParts.length) throw new Error('No image returned from Gemini');
-
-    const inline = imageParts[0].inlineData || imageParts[0].inline_data;
-    const base64Data = inline.data;
-    const ext = (inline.mimeType || inline.mime_type || 'image/jpeg').split('/')[1] || 'jpeg';
-    const fileName = `image_${Date.now()}.${ext}`;
-    const localPath = path.join(TMP_DIR, fileName);
-    fs.writeFileSync(localPath, Buffer.from(base64Data, 'base64'));
-
-    const publicUrl = await uploadToS3(localPath, `image/${ext}`, 'images');
+    const { imagePrompt, referenceImage, modelId } = req.body;
+    if (!imagePrompt) return res.status(400).json({ error: 'imagePrompt is required' });
+    const publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, modelId || DEFAULT_IMAGE_MODEL_ID));
     res.json({ imageUrl: publicUrl });
   } catch (error) {
     console.error('Error in /api/image:', error);
@@ -534,145 +480,79 @@ app.post('/api/image', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 4. VIDEO GENERATION (Veo 3.1 — @google/genai Vertex AI SDK)
+// SERVE MODEL REGISTRY
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos', options = {}) {
-  const veoPrompt = toVeoPrompt(prompt, options.dialogue);
-  console.log(`[Veo3.1] Starting generation for prompt: "${veoPrompt.slice(0, 80)}..."`);
+app.get('/api/models', (_req, res) => {
+  res.json({ imageModels: FAL_IMAGE_MODELS, videoModels: FAL_VIDEO_MODELS });
+});
 
-  // ── Parse Image Reference ───────────────────────────────────────────────
-  let imagePayload;
-  if (imageUrl) {
-    let imageBase64, imageMimeType;
-    if (imageUrl.startsWith('/tmp/')) {
-      const fileName = path.basename(imageUrl);
-      const localPath = path.join(TMP_DIR, fileName);
-      if (fs.existsSync(localPath)) {
-        imageBase64 = fs.readFileSync(localPath).toString('base64');
-        const ext = path.extname(fileName).slice(1) || 'jpeg';
-        imageMimeType = `image/${ext === 'jpg' ? 'jpeg' : ext}`;
-      }
-    } else if (imageUrl.startsWith('http')) {
-      const response = await fetch(imageUrl);
-      if (!response.ok) {
-        throw new Error(`Failed to download reference image: ${response.status} ${response.statusText}`);
-      }
-      const mime = response.headers.get('content-type') || 'image/jpeg';
-      const arrayBuffer = await response.arrayBuffer();
-      imageBase64 = Buffer.from(arrayBuffer).toString('base64');
-      imageMimeType = mime.split(';')[0];
-    } else if (imageUrl.startsWith('data:')) {
-      const commaIdx = imageUrl.indexOf(',');
-      const meta = imageUrl.slice(5, commaIdx);
-      imageMimeType = meta.split(';')[0];
-      imageBase64 = imageUrl.slice(commaIdx + 1);
-    }
+// ─────────────────────────────────────────────────────────────────────────────
+// FAL IMAGE GENERATION HELPER
+// ─────────────────────────────────────────────────────────────────────────────
 
-    if (imageBase64) {
-      imagePayload = {
-        imageBytes: imageBase64,
-        mimeType: imageMimeType,
-      };
-      console.log(`[Veo3.1] Using reference image (MIME: ${imageMimeType})`);
-    }
-  }
+async function generateFalImage(imagePrompt, referenceImageUrl, modelId) {
+  const modelDef = FAL_IMAGE_MODELS.find(m => m.id === modelId) || FAL_IMAGE_MODELS[0];
+  const useEdit = modelDef.supportsRef && referenceImageUrl?.startsWith('http') && modelDef.editEndpoint;
+  const endpoint = useEdit ? modelDef.editEndpoint : modelDef.id;
 
-  // ── Parse Duration ──────────────────────────────────────────────────────
-  let durationSeconds = 8;
-  if (duration !== undefined) {
-    const parsed = parseInt(duration, 10);
-    if (!isNaN(parsed) && parsed > 0) {
-      durationSeconds = parsed;
-    }
-  }
+  const input = useEdit
+    ? { prompt: imagePrompt + ' 9:16 aspect ratio', image_urls: [referenceImageUrl], aspect_ratio: '9:16' }
+    : { prompt: imagePrompt + ' 9:16 aspect ratio', aspect_ratio: '9:16' };
 
-  // ── 1. Kick off the long-running operation ──────────────────────────────
-  const requestPayload = {
-    model: MODELS.VEO31_MODEL,
-    prompt: veoPrompt,
-    config: {
-      aspectRatio:      '9:16',
-      numberOfVideos:   1,
-      durationSeconds:  durationSeconds,
-      personGeneration: 'allow_all',
-      generateAudio:    true,
-      resolution:       '720p',
-    },
-  };
+  console.log(`[fal image] endpoint=${endpoint} useEdit=${useEdit}`);
+  const result = await fal.subscribe(endpoint, { input, logs: false });
+  const falUrl = result.data?.images?.[0]?.url;
+  if (!falUrl) throw new Error('No image returned from fal');
 
-  if (imagePayload) {
-    requestPayload.image = imagePayload;
-  }
-
-  let operation = await genaiClient.models.generateVideos(requestPayload);
-
-  console.log(`[Veo3.1] Operation started: ${operation.name}`);
-
-  // ── 2. Poll until done ──────────────────────────────────────────────────
-  let attempts = 0;
-  const maxPollAttempts = 60;
-  const pollIntervalMs = 10_000;
-
-  while (!operation.done) {
-    if (attempts >= maxPollAttempts) {
-      throw new Error(
-        `[Veo3.1] Timed out after ${maxPollAttempts * pollIntervalMs / 1000}s — operation never completed.`
-      );
-    }
-
-    console.log(
-      `[Veo3.1] Waiting… attempt ${attempts + 1}/${maxPollAttempts} ` +
-      `(poll every ${pollIntervalMs / 1000}s)`
-    );
-
-    await new Promise(r => setTimeout(r, pollIntervalMs));
-    operation = await genaiClient.operations.get({ operation });
-    attempts++;
-  }
-
-  console.log('[Veo3.1] Operation complete. Extracting video…');
-
-  // ── 3. Check for errors / filtering ────────────────────────────────────
-  if (operation.error) {
-    throw new Error(`[Veo3.1] Operation failed: ${JSON.stringify(operation.error)}`);
-  }
-
-  const generatedVideos = operation.response?.generatedVideos;
-  if (!generatedVideos || generatedVideos.length === 0) {
-    throw new Error(
-      `[Veo3.1] No videos in response. Full response: ${JSON.stringify(operation.response)}`
-    );
-  }
-
-  // ── 4. Extract base64 and write to disk ─────────────────────────────────
-  const videoData = generatedVideos[0].video;
-  if (!videoData) {
-    throw new Error('[Veo3.1] generatedVideos[0].video is undefined.');
-  }
-
-  // Vertex AI returns video bytes under `videoBytes`
-  const b64 = videoData.videoBytes ?? videoData.bytesBase64Encoded;
-
-  if (typeof b64 !== 'string' || b64.length === 0) {
-    throw new Error(`[Veo3.1] Unexpected video payload. videoData keys: ${Object.keys(videoData).join(', ')}`);
-  }
-
-  const fileName  = `veo31_${Date.now()}.mp4`;
+  const resp = await fetch(falUrl);
+  if (!resp.ok) throw new Error(`Failed to download fal image: ${resp.statusText}`);
+  const fileName = `image_${Date.now()}.png`;
   const localPath = path.join(TMP_DIR, fileName);
+  fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
+  return uploadToS3(localPath, 'image/png', 'images');
+}
 
-  fs.writeFileSync(localPath, Buffer.from(b64, 'base64'));
-  console.log(`[Veo3.1] Video saved to ${localPath}`);
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. VIDEO GENERATION (fal.ai — Veo 3.1 / Kling / Sora / etc.)
+// ─────────────────────────────────────────────────────────────────────────────
 
-  const publicUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
-  return publicUrl;
+async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos', options = {}) {
+  const { dialogue, modelId } = options;
+  const finalPrompt = toVeoPrompt(prompt, dialogue);
+  const modelDef = FAL_VIDEO_MODELS.find(m => m.id === modelId) || FAL_VIDEO_MODELS[0];
+
+  const validDurations = [4, 6, 8];
+  const dur = validDurations.includes(parseInt(duration)) ? parseInt(duration) : 8;
+  const durationStr = `${dur}s`;
+
+  const hasPublicImage = imageUrl?.startsWith('http');
+  const endpoint = hasPublicImage && modelDef.supportsI2V ? modelDef.i2vEndpoint : modelDef.id;
+
+  const baseInput = { aspect_ratio: '9:16', duration: durationStr, resolution: '720p', generate_audio: modelDef.hasAudio };
+  const input = hasPublicImage && modelDef.supportsI2V
+    ? { ...baseInput, prompt: finalPrompt, image_url: imageUrl }
+    : { ...baseInput, prompt: finalPrompt };
+
+  console.log(`[fal video] endpoint=${endpoint} i2v=${hasPublicImage && modelDef.supportsI2V} dur=${durationStr}`);
+  const result = await fal.subscribe(endpoint, { input, logs: false });
+  const falUrl = result.data?.video?.url;
+  if (!falUrl) throw new Error(`No video returned from fal (endpoint: ${endpoint})`);
+
+  const resp = await fetch(falUrl);
+  if (!resp.ok) throw new Error(`Failed to download fal video: ${resp.statusText}`);
+  const fileName = `video_${Date.now()}.mp4`;
+  const localPath = path.join(TMP_DIR, fileName);
+  fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
+  console.log(`[fal video] saved to ${localPath}`);
+  return uploadToS3(localPath, 'video/mp4', s3Prefix);
 }
 
 app.post('/api/video', async (req, res) => {
   try {
-    const { videoPrompt, imageUrl, duration, dialogue } = req.body;
+    const { videoPrompt, imageUrl, duration, dialogue, modelId } = req.body;
     if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
-    const videoUrl = await generateVeoVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue });
+    const videoUrl = await generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID });
     res.json({ videoUrl });
   } catch (error) {
     console.error('Error in /api/video:', error);
@@ -744,7 +624,7 @@ app.post('/api/merge', async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 app.post('/api/auto-run', async (req, res) => {
-  const { scenes, globalCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId } = req.body;
+  const { scenes, globalCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId, imageModelId, videoModelId } = req.body;
 
   if (!scenes || scenes.length === 0) {
     return res.status(400).json({ error: 'scenes array is required' });
@@ -842,54 +722,13 @@ app.post('/api/auto-run', async (req, res) => {
         sendEvent({ type: 'scene_progress', sceneId, stage: 'image', status: 'generating' });
         try {
           await withRetry(async () => {
-            const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${MODELS.IMAGE_MODEL}:generateContent?key=${GOOGLE_API_KEY}`;
-            const parts = [];
-  
-            // Pass previous scene's actual image for visual reference
             const prevScene = i > 0 ? sceneResults[i - 1] : null;
-            if (prevScene?.imageUrl) {
-              let base64Data = null;
-              let mimeType = 'image/jpeg';
-              if (prevScene.imageUrl.startsWith('/tmp/')) {
-                base64Data = tmpFileToBase64(prevScene.imageUrl);
-              } else if (prevScene.imageUrl.startsWith('http')) {
-                const imageRes = await fetch(prevScene.imageUrl);
-                if (imageRes.ok) {
-                  const arrayBuffer = await imageRes.arrayBuffer();
-                  base64Data = Buffer.from(arrayBuffer).toString('base64');
-                  mimeType = (imageRes.headers.get('content-type') || 'image/jpeg').split(';')[0];
-                }
-              }
-              if (base64Data) {
-                parts.push({ inlineData: { data: base64Data, mimeType } });
-                parts.push({ text: 'Use the provided image as a strict visual reference for the character\'s face, skin tone, body build, clothing, and overall style. Maintain perfect visual continuity with this reference.' });
-              }
-            }
-  
-            parts.push({ text: sceneResults[i].imagePrompt + ' 9:16 aspect ratio' });
-  
-            const response = await fetch(geminiUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ role: 'user', parts }],
-                generationConfig: { responseModalities: ['IMAGE', 'TEXT'] }
-              }),
-            });
-  
-            const gemData = await response.json();
-            if (!response.ok) throw new Error(gemData.error?.message || 'Gemini Image API failed');
-  
-            const imageParts = gemData.candidates?.[0]?.content?.parts?.filter(p => p.inlineData || p.inline_data) || [];
-            if (!imageParts.length) throw new Error('No image returned from Gemini');
-  
-            const inline = imageParts[0].inlineData || imageParts[0].inline_data;
-            const ext = (inline.mimeType || inline.mime_type || 'image/jpeg').split('/')[1] || 'jpeg';
-            const fileName = `image_${Date.now()}.${ext}`;
-            const localPath = path.join(TMP_DIR, fileName);
-            fs.writeFileSync(localPath, Buffer.from(inline.data, 'base64'));
-  
-            const s3Url = await uploadToS3(localPath, `image/${ext}`, `sessions/${sessionId || 'temp'}/images`);
+            const refImageUrl = prevScene?.imageUrl?.startsWith('http') ? prevScene.imageUrl : null;
+            const s3Url = await generateFalImage(
+              sceneResults[i].imagePrompt,
+              refImageUrl,
+              imageModelId || DEFAULT_IMAGE_MODEL_ID
+            );
             sceneResults[i].imageUrl = s3Url;
             sceneResults[i].status = 'image_done';
             await saveProgress();
@@ -976,21 +815,21 @@ app.post('/api/auto-run', async (req, res) => {
         sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'generating' });
         try {
           await withRetry(async () => {
-            const videoUrl = await generateVeoVideo(
+            const videoUrl = await generateFalVideo(
               sceneResults[i].videoPrompt,
               sceneResults[i].imageUrl,
               sceneResults[i].duration,
               `sessions/${sessionId || 'temp'}/videos`,
-              { dialogue: sceneResults[i].dialogue }
+              { dialogue: sceneResults[i].dialogue, modelId: videoModelId || DEFAULT_VIDEO_MODEL_ID }
             );
             const genId = Math.random().toString(36).substr(2, 9);
             const generation = { id: genId, videoUrl, createdAt: Date.now(), isFinal: true };
             sceneResults[i].videoGenerations = [...(sceneResults[i].videoGenerations || []), generation];
-            sceneResults[i].videoUrl = videoUrl; // backward compat
+            sceneResults[i].videoUrl = videoUrl;
             sceneResults[i].status = 'video_done';
             await saveProgress();
             sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl, generationId: genId } });
-          }, 3, 5000); // 3 retries, 5s delay between attempts
+          }, 3, 5000);
         } catch (e) {
           sendEvent({ type: 'error', sceneId, stage: 'video', message: `Failed after retries: ${e.message}` });
           continue;

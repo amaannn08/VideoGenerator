@@ -88,6 +88,7 @@ export default function ScenesView({
   onAutoRun, onStopAutoRun,
   refreshMediaUrl, narrativeArc,
   activeSceneId, onSceneSelect,
+  imageModelId, videoModelId,
 }) {
   const allDone = scenes.length > 0 && scenes.every(s => Boolean(s.videoUrl));
   const isRunning = autoRunStage === 'running';
@@ -152,6 +153,8 @@ export default function ScenesView({
               onDelete={() => { deleteScene(scene.id); onSceneSelect(null); }}
               onAddAfter={() => addScene(sceneIdx)}
               refreshMediaUrl={refreshMediaUrl}
+              imageModelId={imageModelId}
+              videoModelId={videoModelId}
             />
           </div>
           {/* RIGHT — preview panel */}
@@ -220,6 +223,8 @@ export default function ScenesView({
               onDelete={() => deleteScene(scene.id)}
               onAddAfter={() => addScene(i)}
               refreshMediaUrl={refreshMediaUrl}
+              imageModelId={imageModelId}
+              videoModelId={videoModelId}
             />
           </div>
         ))}

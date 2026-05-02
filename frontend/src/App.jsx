@@ -8,6 +8,8 @@ import CharacterPanel from './components/CharacterPanel';
 import EnvironmentsPanel from './components/EnvironmentsPanel';
 import Login from './components/Login';
 import ReelView from './components/ReelView';
+import ModelsPage from './components/ModelsPage';
+import { DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './falModels';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -72,6 +74,8 @@ export default function App() {
   const [sceneCount, setSceneCount]                   = useLocalStorage('ai-video-scenecount', 3);
   const [scenes, setScenes]                           = useLocalStorage('ai-video-scenes', []);
   const [mergedVideo, setMergedVideo]                 = useLocalStorage('ai-video-merged', null);
+  const [imageModelId, setImageModelId]               = useLocalStorage('ai-video-image-model', DEFAULT_IMAGE_MODEL_ID);
+  const [videoModelId, setVideoModelId]               = useLocalStorage('ai-video-video-model', DEFAULT_VIDEO_MODEL_ID);
 
   // ── Transient state ────────────────────────────────────────────────────
   const [loadingScenes, setLoadingScenes]             = useState(false);
@@ -341,7 +345,10 @@ export default function App() {
     setAutoRunStage('running');
     setAutoRunProgress({});
     setMergedVideo(null);
-    const body = JSON.stringify({scenes, globalCharacter:activeCharacter, globalCharacters, globalEnvironments, targetLanguage, sessionId});
+    const body = JSON.stringify({
+      scenes, globalCharacter:activeCharacter, globalCharacters, globalEnvironments,
+      targetLanguage, sessionId, imageModelId, videoModelId,
+    });
     fetch(`${API}/api/auto-run`, { method:'POST', headers:{'Content-Type':'application/json'}, body })
       .then(async res => {
         const reader = res.body.getReader();
@@ -401,6 +408,15 @@ export default function App() {
 
   const mainContent = () => {
     switch (activeTab) {
+      case 'models':
+        return (
+          <ModelsPage
+            imageModelId={imageModelId}
+            videoModelId={videoModelId}
+            onImageModelChange={setImageModelId}
+            onVideoModelChange={setVideoModelId}
+          />
+        );
       case 'script':
         return (
           <ScriptPanel
@@ -467,6 +483,8 @@ export default function App() {
             narrativeArc={narrativeArc}
             activeSceneId={activeSceneId}
             onSceneSelect={setActiveSceneId}
+            imageModelId={imageModelId}
+            videoModelId={videoModelId}
           />
         );
     }
@@ -479,6 +497,9 @@ export default function App() {
           onLogout={handleLogout}
           onOpenReel={() => setActiveTab('reel')}
           hasScenes={scenes.length > 0}
+          imageModelId={imageModelId}
+          videoModelId={videoModelId}
+          onOpenModels={() => setActiveTab('models')}
         />
 
       <div className="app-body">

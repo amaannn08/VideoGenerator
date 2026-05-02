@@ -1,11 +1,12 @@
 import React from 'react';
-import { User, MapPin, Film, FileText, ChevronRight } from 'lucide-react';
+import { User, MapPin, Film, FileText, ChevronRight, Cpu } from 'lucide-react';
 
 const NAV = [
   { key: 'script',       label: 'Script',        Icon: FileText },
   { key: 'characters',   label: 'Characters',    Icon: User },
   { key: 'environments', label: 'Environments',  Icon: MapPin },
   { key: 'scenes',       label: 'Scenes',        Icon: Film },
+  { key: 'models',       label: 'AI Models',     Icon: Cpu },
 ];
 
 const SCENE_DOT = { video_done:'var(--green)', image_done:'var(--blue)', image_generating:'var(--amber)', video_generating:'var(--amber)', draft:'var(--text-muted)' };

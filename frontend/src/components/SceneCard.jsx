@@ -32,7 +32,7 @@ function Modal({ isOpen, onClose, title, children }) {
 
 const STAGES = ['draft', 'generating_image_prompt', 'image_prompt_ready', 'image_generating', 'image_done', 'generating_video_prompt', 'video_prompt_ready', 'video_generating', 'video_done'];
 
-const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalCharacters = [], globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl }) => {
+const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalCharacters = [], globalEnvironments, targetLanguage, previousSceneImage, totalScenes, autoRunStage, onDelete, onAddAfter, refreshMediaUrl, imageModelId, videoModelId }) => {
   const { status } = scene;
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
@@ -162,7 +162,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const genImage = async () => {
     updateScene(scene.id, { status: 'image_generating' });
     try {
-      const r = await fetch(`${API}/api/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imagePrompt: scene.imagePrompt, referenceImage: previousSceneImage }), signal: signal() });
+      const r = await fetch(`${API}/api/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imagePrompt: scene.imagePrompt, referenceImage: previousSceneImage, modelId: imageModelId }), signal: signal() });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       const genId = Math.random().toString(36).substr(2, 9);
@@ -224,7 +224,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       const r = await fetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: activeImageUrl, duration: scene.duration, dialogue: scene.dialogue }),
+        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: activeImageUrl, duration: scene.duration, dialogue: scene.dialogue, modelId: videoModelId }),
         signal: signal(),
       });
       const d = await r.json();
@@ -624,7 +624,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                       variant={status === 'video_generating' ? 'danger' : 'primary'} 
                       className="w-full py-4 text-lg rounded-2xl mt-4 shrink-0"
                     >
-                      {status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : videoGenerations.length > 0 ? 'Generate Another Attempt' : 'Generate Video (Veo 3)'}
+                      {status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : videoGenerations.length > 0 ? 'Generate Another Attempt' : `Generate Video`}
                     </Btn>
                   )}
 
