@@ -82,25 +82,26 @@ export const FAL_VIDEO_MODELS = [
     speed: 'medium',
   },
   {
-    // Kling 2.5 Standard I2V only — T2V falls back to Pro endpoint
-    id: 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
-    label: 'Kling 2.5 Standard',
-    sublabel: 'Kuaishou · V2.5 Standard',
+    // WAN 2.1 — open model, great I2V, no account approval required
+    id: 'fal-ai/wan-i2v',
+    label: 'WAN 2.1 I2V',
+    sublabel: 'Alibaba · Open Source',
     supportsI2V: true,
-    i2vEndpoint: 'fal-ai/kling-video/v2.5-turbo/standard/image-to-video',
-    inputSchema: 'kling',  // duration: "5" or "10" (no 's'), cfg_scale
+    i2vEndpoint: 'fal-ai/wan-i2v',
+    inputSchema: 'wan',   // prompt, image_url, aspect_ratio, resolution
     hasAudio: false,
-    maxDuration: 5,
+    maxDuration: 6,
     recommended: false,
-    speed: 'fast',
+    speed: 'medium',
   },
   {
+    // Kling 2.5 Pro — requires Fal account approval (may 401 without)
     id: 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
     label: 'Kling 2.5 Pro',
-    sublabel: 'Kuaishou · V2.5 Pro Motion',
+    sublabel: 'Kuaishou · V2.5 Pro (Needs approval)',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
-    inputSchema: 'kling',  // duration: "5" or "10" (no 's'), cfg_scale
+    inputSchema: 'kling',
     hasAudio: false,
     maxDuration: 5,
     recommended: false,

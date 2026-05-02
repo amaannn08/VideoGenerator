@@ -474,9 +474,9 @@ app.post('/api/image', async (req, res) => {
     const publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, modelId || DEFAULT_IMAGE_MODEL_ID));
     res.json({ imageUrl: publicUrl });
   } catch (error) {
-    console.error('Error in /api/image:', error);
-    if (error.body && error.body.detail) {
-      console.error('Validation details:', JSON.stringify(error.body.detail, null, 2));
+    console.error(`Error in /api/image [model=${req.body?.modelId}]:`, error.message);
+    if (error.body) {
+      console.error('Error body:', JSON.stringify(error.body, null, 2));
     }
     res.status(500).json({ error: error.message });
   }
@@ -512,15 +512,18 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId) {
   const falUrl = result.data?.images?.[0]?.url;
   if (!falUrl) throw new Error('No image returned from fal');
 
-  const resp = await fetch(falUrl);
-  if (!resp.ok) throw new Error(`Failed to download fal image: ${resp.statusText}`);
-  const fileName = `image_${Date.now()}.png`;
-  const localPath = path.join(TMP_DIR, fileName);
-  fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
+  console.log(`[fal image] got url: ${falUrl}`);
+
+  // Try S3 upload; if credentials are missing (local dev) return the raw Fal URL directly
   try {
+    const resp = await fetch(falUrl);
+    if (!resp.ok) throw new Error(`Failed to download fal image: ${resp.statusText}`);
+    const fileName = `image_${Date.now()}.png`;
+    const localPath = path.join(TMP_DIR, fileName);
+    fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
     return await uploadToS3(localPath, 'image/png', 'images');
-  } catch (s3Error) {
-    console.warn('[S3 Upload Fallback] S3 upload failed, returning raw Fal URL instead:', s3Error.message);
+  } catch (err) {
+    console.warn('[Image Fallback] Returning raw Fal URL:', err.message);
     return falUrl;
   }
 }
@@ -572,6 +575,10 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
     // Kling duration is "5" or "10" (no 's' suffix)
     const base = { prompt: finalPrompt, duration: klingDurationStr, cfg_scale: 0.5 };
     input = useI2V ? { ...base, image_url: finalImageUrl } : { ...base, aspect_ratio: '9:16' };
+  } else if (modelDef.inputSchema === 'wan') {
+    // WAN 2.1 I2V — no duration field, uses aspect_ratio + resolution
+    const base = { prompt: finalPrompt, aspect_ratio: '9:16', resolution: '720p' };
+    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   } else {
     // Default: Luma Ray2, Hunyuan — duration as "Xs", aspect_ratio, resolution
     const base = { prompt: finalPrompt, aspect_ratio: '9:16', duration: durationStr, resolution: '720p' };
