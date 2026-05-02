@@ -1,20 +1,20 @@
 // Mirrors backend/models.js — single source of truth for UI
 export const FAL_IMAGE_MODELS = [
   {
-    id: 'fal-ai/nano-banana-2',
-    label: 'Nano Banana 2',
-    sublabel: 'Fast Text-to-Image',
-    supportsRef: false,
-    tags: ['fast'],
-    recommended: true,
-    speed: 'fast',
-  },
-  {
     id: 'fal-ai/flux/dev',
     label: 'FLUX.1 Dev',
     sublabel: 'Black Forest Labs · Open weights',
     supportsRef: true,
     tags: ['fast', 'reference'],
+    recommended: true,
+    speed: 'fast',
+  },
+  {
+    id: 'fal-ai/nano-banana-2',
+    label: 'Nano Banana 2',
+    sublabel: 'Fast Text-to-Image',
+    supportsRef: false,
+    tags: ['fast'],
     recommended: false,
     speed: 'fast',
   },

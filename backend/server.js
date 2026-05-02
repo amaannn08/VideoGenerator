@@ -548,7 +548,29 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId, options
   const endpoint = useEdit ? modelDef.editEndpoint : modelDef.id;
 
   const arParam = modelDef.arParam || 'image_size';
-  const arValue = options.aspect_ratio || modelDef.arValue || 'portrait_16_9';
+  let arValue = options.aspect_ratio || modelDef.arValue || '9:16';
+
+  console.log(`[Fal Debug] Initial: model=${modelId} arParam=${arParam} arValue=${arValue}`);
+
+  // Force-normalize common strings
+  const arMap = {
+    'portrait_16_9': '9:16',
+    'landscape_16_9': '16:9',
+    'square': '1:1'
+  };
+  const reverseArMap = {
+    '9:16': 'portrait_16_9',
+    '16:9': 'landscape_16_9',
+    '1:1': 'square'
+  };
+
+  if (arParam === 'aspect_ratio' && arMap[arValue]) {
+    console.log(`[Fal Debug] Mapping ${arValue} -> ${arMap[arValue]} for aspect_ratio`);
+    arValue = arMap[arValue];
+  } else if (arParam === 'image_size' && reverseArMap[arValue]) {
+    console.log(`[Fal Debug] Mapping ${arValue} -> ${reverseArMap[arValue]} for image_size`);
+    arValue = reverseArMap[arValue];
+  }
 
   const input = { 
     prompt: imagePrompt, 
@@ -559,7 +581,7 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId, options
     input.image_url = referenceImageUrl;
   }
 
-  console.log(`[fal image] endpoint=${endpoint} useEdit=${useEdit} ar=${arValue}`);
+  console.log(`[fal image] Final Config: endpoint=${endpoint} param=${arParam} value=${arValue}`);
   const result = await fal.subscribe(endpoint, { input, logs: false });
   const falUrl = result.data?.images?.[0]?.url;
   if (!falUrl) throw new Error('No image returned from fal');
