@@ -95,10 +95,35 @@ export const FAL_VIDEO_MODELS = [
     speed: 'medium',
   },
   {
+    // Veo 3.1 — Google's latest model, supports native audio
+    id: 'fal-ai/veo3.1',
+    label: 'Veo 3.1',
+    sublabel: 'Google · High quality with Audio',
+    supportsI2V: false,
+    inputSchema: 'veo',
+    hasAudio: true,
+    maxDuration: 5,
+    recommended: false,
+    speed: 'medium',
+  },
+  {
+    // Kling 2.6 Pro — supports native audio
+    id: 'fal-ai/kling-video/v2.6/pro/text-to-video',
+    label: 'Kling 2.6 Pro',
+    sublabel: 'Kuaishou · V2.6 with Audio',
+    supportsI2V: true,
+    i2vEndpoint: 'fal-ai/kling-video/v2.6/pro/image-to-video',
+    inputSchema: 'kling',
+    hasAudio: true,
+    maxDuration: 5,
+    recommended: false,
+    speed: 'medium',
+  },
+  {
     // Kling 2.5 Pro — requires Fal account approval (may 401 without)
     id: 'fal-ai/kling-video/v2.5-turbo/pro/text-to-video',
     label: 'Kling 2.5 Pro',
-    sublabel: 'Kuaishou · V2.5 Pro (Needs approval)',
+    sublabel: 'Kuaishou · V2.5 Pro (No Audio)',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/kling-video/v2.5-turbo/pro/image-to-video',
     inputSchema: 'kling',

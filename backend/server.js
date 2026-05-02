@@ -574,14 +574,21 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   } else if (modelDef.inputSchema === 'kling') {
     // Kling duration is "5" or "10" (no 's' suffix)
     const base = { prompt: finalPrompt, duration: klingDurationStr, cfg_scale: 0.5 };
+    if (modelDef.hasAudio) base.generate_audio = true;
     input = useI2V ? { ...base, image_url: finalImageUrl } : { ...base, aspect_ratio: '9:16' };
   } else if (modelDef.inputSchema === 'wan') {
     // WAN 2.1 I2V — no duration field, uses aspect_ratio + resolution
     const base = { prompt: finalPrompt, aspect_ratio: '9:16', resolution: '720p' };
     input = useI2V ? { ...base, image_url: finalImageUrl } : base;
+  } else if (modelDef.inputSchema === 'veo') {
+    // Veo 3.1 — duration as "Xs", aspect_ratio, resolution, generate_audio
+    const base = { prompt: finalPrompt, aspect_ratio: '16:9', duration: durationStr, resolution: '720p' };
+    if (modelDef.hasAudio) base.generate_audio = true;
+    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   } else {
     // Default: Luma Ray2, Hunyuan — duration as "Xs", aspect_ratio, resolution
     const base = { prompt: finalPrompt, aspect_ratio: '9:16', duration: durationStr, resolution: '720p' };
+    if (modelDef.hasAudio) base.generate_audio = true;
     input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   }
 
