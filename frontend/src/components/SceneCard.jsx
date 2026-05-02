@@ -44,6 +44,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const [localTone, setLocalTone] = useState(scene.dialogue?.tone || 'calm and deliberate');
   const [localPacing, setLocalPacing] = useState(scene.dialogue?.pacing || 'slow with natural pauses');
   const [localLang, setLocalLang] = useState(scene.dialogue?.language || 'Hindi');
+  const [localDialogueMode, setLocalDialogueMode] = useState(scene.dialogue?.mode === 'narration' ? 'narration' : 'character');
   const [localSummary, setLocalSummary] = useState(scene.summary || '');
   const [localLocation, setLocalLocation] = useState(scene.location || '');
   const [localTimeOfDay, setLocalTimeOfDay] = useState(scene.timeOfDay || '');
@@ -62,6 +63,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
   useEffect(() => setLocalVid(scene.videoPrompt || ''), [scene.videoPrompt]);
   useEffect(() => setLocalDialogue(scene.dialogue?.text || ''), [scene.dialogue?.text]);
+  useEffect(() => setLocalDialogueMode(scene.dialogue?.mode === 'narration' ? 'narration' : 'character'), [scene.dialogue?.mode]);
   useEffect(() => setLocalSummary(scene.summary || ''), [scene.summary]);
   useEffect(() => setLocalLocation(scene.location || ''), [scene.location]);
   useEffect(() => setLocalTimeOfDay(scene.timeOfDay || ''), [scene.timeOfDay]);
@@ -78,8 +80,17 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const activeEnvironment = (globalEnvironments || []).find(e => e.id === scene.selectedEnvironmentId) || getAutoEnvironment();
   const activeCharacter = (globalCharacters || []).find(c => c.id === scene.selectedCharacterId) || globalCharacter;
 
-  const saveDialogue = (text, tone, pacing, lang) => {
-    updateScene(scene.id, { dialogue: { ...(scene.dialogue || {}), text, tone, pacing, language: lang } });
+  const saveDialogue = (text, tone, pacing, lang, mode = localDialogueMode) => {
+    updateScene(scene.id, {
+      dialogue: {
+        ...(scene.dialogue || {}),
+        text,
+        tone,
+        pacing,
+        language: lang,
+        mode: mode === 'narration' ? 'narration' : 'character',
+      },
+    });
   };
 
   const abort = () => { if (abortRef.current) abortRef.current.abort(); };
@@ -213,7 +224,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       const r = await fetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: activeImageUrl, duration: scene.duration }),
+        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: activeImageUrl, duration: scene.duration, dialogue: scene.dialogue }),
         signal: signal(),
       });
       const d = await r.json();
@@ -293,7 +304,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
           </div>
         </div>
 
-        <div style={{ padding:'12px 14px', flex:1, display:'flex', flexDirection:'column', gap:10 }}>
+        <div style={{ padding:'12px 14px', flex:1, minHeight:0, display:'flex', flexDirection:'column', gap:10, overflowY:'auto' }}>
           <button type="button" onClick={() => setScriptModal(true)} style={{ textAlign:'left', background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'10px 12px', cursor:'pointer', transition:'border-color 0.15s', flexShrink:0, height:80, overflow:'hidden' }} onMouseOver={e=>e.currentTarget.style.borderColor='var(--border-strong)'} onMouseOut={e=>e.currentTarget.style.borderColor='var(--border-subtle)'}>
             <p style={{ fontSize:12, color:'var(--text-secondary)', lineHeight:1.5, display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', marginBottom:4 }}>{scene.summary || <span style={{color:'var(--text-muted)'}}>No summary — click to edit</span>}</p>
             <p style={{ fontSize:11, color:'var(--text-muted)', display:'flex', alignItems:'center', gap:4, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}><MapPin size={10} /> {scene.location}{scene.timeOfDay ? ' · '+scene.timeOfDay : ''}</p>
@@ -302,7 +313,11 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
           <details style={{ background:'var(--bg-raised)', border:'1px solid var(--border-subtle)', borderRadius:10, padding:'8px 12px' }} open>
             <summary style={{ listStyle:'none', cursor:'pointer', fontSize:10, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--text-muted)', display:'flex', alignItems:'center', gap:5, marginBottom:6 }}><Mic size={10} /> Dialogue</summary>
             <input value={localLang} onChange={e=>setLocalLang(e.target.value)} onBlur={()=>saveDialogue(localDialogue,localTone,localPacing,localLang)} placeholder="Language" style={{ fontSize:10, fontWeight:700, color:'var(--amber)', background:'var(--amber-glow)', border:'none', borderRadius:6, padding:'3px 8px', width:70, textAlign:'center', outline:'none', marginBottom:6 }} />
-            <textarea value={localDialogue} onChange={e=>setLocalDialogue(e.target.value)} onBlur={()=>saveDialogue(localDialogue,localTone,localPacing,localLang)} rows={2} placeholder="No dialogue — type the spoken line here…" style={{ width:'100%', fontSize:12, fontStyle:'italic', color:'var(--text-primary)', background:'var(--bg-overlay)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'8px 10px', resize:'none', outline:'none', lineHeight:1.5, boxSizing:'border-box' }} />
+            <div style={{ display:'flex', gap:4, marginBottom:6, flexWrap:'wrap' }}>
+              <button type="button" onClick={() => { setLocalDialogueMode('character'); saveDialogue(localDialogue, localTone, localPacing, localLang, 'character'); }} style={{ flex:1, fontSize:10, fontWeight:700, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border-subtle)', cursor:'pointer', background: localDialogueMode === 'character' ? 'var(--amber-glow)' : 'var(--bg-overlay)', color:'var(--text-secondary)' }}>Character speaks</button>
+              <button type="button" onClick={() => { setLocalDialogueMode('narration'); saveDialogue(localDialogue, localTone, localPacing, localLang, 'narration'); }} style={{ flex:1, fontSize:10, fontWeight:700, padding:'6px 8px', borderRadius:6, border:'1px solid var(--border-subtle)', cursor:'pointer', background: localDialogueMode === 'narration' ? 'var(--amber-glow)' : 'var(--bg-overlay)', color:'var(--text-secondary)' }}>Narration (VO)</button>
+            </div>
+            <textarea value={localDialogue} onChange={e=>setLocalDialogue(e.target.value)} onBlur={()=>saveDialogue(localDialogue,localTone,localPacing,localLang)} rows={2} placeholder={localDialogueMode === 'narration' ? 'Voice-over line… (narrator address)' : 'Spoken line — optionally note who speaks…'} style={{ width:'100%', fontSize:12, fontStyle:'italic', color:'var(--text-primary)', background:'var(--bg-overlay)', border:'1px solid var(--border-subtle)', borderRadius:8, padding:'8px 10px', resize:'none', outline:'none', lineHeight:1.5, boxSizing:'border-box' }} />
             <div style={{ display:'flex', gap:6, marginTop:6 }}>
               <select value={localTone} onChange={e=>{setLocalTone(e.target.value);saveDialogue(localDialogue,e.target.value,localPacing,localLang);}} style={{ fontSize:10, flex:1, background:'var(--bg-overlay)', color:'var(--text-secondary)', border:'1px solid var(--border-subtle)', borderRadius:6, padding:'4px 6px', outline:'none' }}>
                 <option>commanding and calm</option><option>heavy and burdened</option><option>whisper-like and introspective</option><option>broken and raw</option><option>quiet and resolute</option><option>calm and deliberate</option>

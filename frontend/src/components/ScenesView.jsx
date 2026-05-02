@@ -33,7 +33,7 @@ function PreviewPanel({ scene, sceneIdx }) {
   );
 
   return (
-    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 14, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
+    <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 14, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%', minHeight: 0 }}>
 
       {/* Header + tabs */}
       <div style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
@@ -45,7 +45,7 @@ function PreviewPanel({ scene, sceneIdx }) {
       </div>
 
       {/* Media */}
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', overflow: 'hidden' }}>
+      <div style={{ flex: 1, minHeight: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', overflow: 'hidden' }}>
         {mode === 'video' && finalVideo ? (
           <video key={finalVideo} src={getMediaUrl(finalVideo)} controls autoPlay loop style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
         ) : mode === 'image' && finalImage ? (
@@ -103,7 +103,10 @@ export default function ScenesView({
     const nextScene = sceneIdx < scenes.length - 1 ? scenes[sceneIdx + 1] : null;
 
     return (
-      <div className="animate-fade-up" style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
+      <div
+        className="animate-fade-up scenes-detail-root"
+        style={{ display: 'flex', flexDirection: 'column', gap: 14, width: '100%' }}
+      >
         {/* Breadcrumb nav */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
           <button className="btn btn-ghost btn-sm" onClick={() => onSceneSelect(null)} style={{ gap: 6 }}>
@@ -125,10 +128,20 @@ export default function ScenesView({
           </div>
         </div>
 
-        {/* Two-column layout */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, flex: 1, minHeight: 0 }}>
+        {/* Two-column layout — fills remaining height under breadcrumb (fits screen) */}
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gridTemplateRows: 'minmax(0, 1fr)',
+            gap: 16,
+            flex: 1,
+            minHeight: 0,
+            alignItems: 'stretch',
+          }}
+        >
           {/* LEFT — scene card controls */}
-          <div style={{ overflowY: 'auto', paddingRight: 2 }}>
+          <div style={{ height: '100%', overflowY: 'auto', paddingRight: 2, minHeight: 0 }}>
             <SceneCard
               scene={scene} index={sceneIdx}
               updateScene={updateScene}

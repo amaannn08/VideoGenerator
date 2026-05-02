@@ -10,6 +10,7 @@ import ffmpegStatic from 'ffmpeg-static';
 import fetch from 'node-fetch';
 import { MODELS } from './models.js';
 import { SYSTEM_PROMPTS } from './prompts.js';
+import { toVeoPrompt } from './veoPrompt.js';
 import { initDb, query } from './db.js';
 import { GoogleGenAI } from '@google/genai';
 import { GoogleAuth } from 'google-auth-library';
@@ -432,7 +433,15 @@ app.post('/api/prompts/video', async (req, res) => {
         const tData = await tRes.json();
         const translatedText = tData.data?.translations?.[0]?.translatedText;
         if (translatedText) {
-          processedScene = { ...scene, dialogue: { ...scene.dialogue, text: translatedText, language: targetLanguage } };
+          processedScene = {
+            ...scene,
+            dialogue: {
+              ...scene.dialogue,
+              text: translatedText,
+              language: targetLanguage,
+              phonetic: translatedText,
+            },
+          };
         }
       } catch (tErr) {
         console.warn('[Translation] Failed, using original dialogue:', tErr.message);
@@ -528,8 +537,9 @@ app.post('/api/image', async (req, res) => {
 // 4. VIDEO GENERATION (Veo 3.1 — @google/genai Vertex AI SDK)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos') {
-  console.log(`[Veo3.1] Starting generation for prompt: "${prompt.slice(0, 80)}..."`);
+async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos', options = {}) {
+  const veoPrompt = toVeoPrompt(prompt, options.dialogue);
+  console.log(`[Veo3.1] Starting generation for prompt: "${veoPrompt.slice(0, 80)}..."`);
 
   // ── Parse Image Reference ───────────────────────────────────────────────
   let imagePayload;
@@ -580,7 +590,7 @@ async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos')
   // ── 1. Kick off the long-running operation ──────────────────────────────
   const requestPayload = {
     model: MODELS.VEO31_MODEL,
-    prompt,
+    prompt: veoPrompt,
     config: {
       aspectRatio:      '9:16',
       numberOfVideos:   1,
@@ -660,9 +670,9 @@ async function generateVeoVideo(prompt, imageUrl, duration, s3Prefix = 'videos')
 
 app.post('/api/video', async (req, res) => {
   try {
-    const { videoPrompt, imageUrl, duration } = req.body;
+    const { videoPrompt, imageUrl, duration, dialogue } = req.body;
     if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
-    const videoUrl = await generateVeoVideo(videoPrompt, imageUrl, duration);
+    const videoUrl = await generateVeoVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue });
     res.json({ videoUrl });
   } catch (error) {
     console.error('Error in /api/video:', error);
@@ -915,7 +925,17 @@ app.post('/api/auto-run', async (req, res) => {
                 });
                 const tData = await tRes.json();
                 const translated = tData.data?.translations?.[0]?.translatedText;
-                if (translated) processedScene = { ...processedScene, dialogue: { ...scene.dialogue, text: translated, language: targetLanguage } };
+                if (translated) {
+                  processedScene = {
+                    ...processedScene,
+                    dialogue: {
+                      ...scene.dialogue,
+                      text: translated,
+                      language: targetLanguage,
+                      phonetic: translated,
+                    },
+                  };
+                }
               } catch (tErr) {
                 console.warn('[Auto-run translation] Failed:', tErr.message);
               }
@@ -933,6 +953,7 @@ app.post('/api/auto-run', async (req, res) => {
             let data = extractJson(completion.choices[0].message.content);
             if (!data) data = JSON.parse(completion.choices[0].message.content);
   
+            sceneResults[i].dialogue = processedScene.dialogue || sceneResults[i].dialogue;
             sceneResults[i].videoPrompt = data.videoPrompt;
             sceneResults[i].duration = data.duration || scene.duration;
             sceneResults[i].status = 'video_prompt_ready';
@@ -959,7 +980,8 @@ app.post('/api/auto-run', async (req, res) => {
               sceneResults[i].videoPrompt,
               sceneResults[i].imageUrl,
               sceneResults[i].duration,
-              `sessions/${sessionId || 'temp'}/videos`
+              `sessions/${sessionId || 'temp'}/videos`,
+              { dialogue: sceneResults[i].dialogue }
             );
             const genId = Math.random().toString(36).substr(2, 9);
             const generation = { id: genId, videoUrl, createdAt: Date.now(), isFinal: true };

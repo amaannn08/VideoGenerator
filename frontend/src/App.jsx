@@ -216,7 +216,7 @@ export default function App() {
   const updateScene  = useCallback((id, updates) => setScenes(prev=>prev.map(s=>s.id===id?{...s,...updates}:s)), [setScenes]);
   const deleteScene  = useCallback((id) => setScenes(prev=>prev.filter(s=>s.id!==id)), [setScenes]);
   const addScene     = useCallback((afterIndex) => {
-    const newScene = { id:Math.random().toString(36).substr(2,9), title:'', summary:'', location:'', timeOfDay:'', emotionalTone:'', dialogue:{text:'',tone:'calm and deliberate',pacing:'slow with natural pauses',language:'Hindi'}, duration:8, status:'draft', selectedCharacterId:'', selectedEnvironmentId:'' };
+    const newScene = { id:Math.random().toString(36).substr(2,9), title:'', summary:'', location:'', timeOfDay:'', emotionalTone:'', dialogue:{text:'',phonetic:'',tone:'calm and deliberate',pacing:'slow with natural pauses',language:'Hindi',mode:'character'}, duration:8, status:'draft', selectedCharacterId:'', selectedEnvironmentId:'' };
     setScenes(prev => { const next=[...prev]; next.splice(afterIndex+1,0,newScene); return next; });
   }, [setScenes]);
 

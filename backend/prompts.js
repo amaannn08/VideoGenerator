@@ -4,7 +4,7 @@
 
 const IMAGE_QUALITY_TAIL = `portrait composition (9:16), cinematic, ultra realistic, 4k, volumetric lighting, extreme shallow depth of field, character in sharp focus, background blurred, film still`;
 
-const VIDEO_QUALITY_TAIL = `cinematic quality, realistic motion, precise lip sync, depth of field, character always in sharp focus at all times`;
+const VIDEO_QUALITY_TAIL = `cinematic quality, realistic motion, depth of field, character always in sharp focus. No subtitles. No text overlay. No captions. No watermark.`;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SCENE SPLITTER PROMPT (unchanged)
@@ -22,7 +22,7 @@ ${countInstruction} that form a CONTINUOUS, EMOTIONALLY LINKED narrative — lik
 CRITICAL RULES:
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 1. Each scene must represent exactly 4, 6, or 8 seconds of screen time.
-2. EXTRACT DIALOGUE DIRECTLY from the script — do not invent lines. If the script has spoken words, they belong in the "dialogue.text" field verbatim. IMPORTANT: If the dialogue is in Hindi or Hinglish, you MUST write the dialogue in the Devanagari script (e.g., 'नमस्ते' instead of 'namaste') in the "dialogue.text" field to ensure proper text-to-speech pronunciation.
+2. EXTRACT DIALOGUE DIRECTLY from the script — do not invent lines. If the script has spoken words, they belong in the "dialogue.text" field verbatim. IMPORTANT: If the dialogue is in Hindi or Hinglish, you MUST write the dialogue in the Devanagari script (e.g., 'नमस्ते' instead of 'namaste') in the "dialogue.text" field for records and TTS. Additionally: if dialogue.language is Hindi or Sanskrit, populate "dialogue.phonetic" with a clean romanized transliteration of dialogue.text for English-first video generation (e.g. dialogue.text = "यह युद्ध नहीं, यह अंत है।" → dialogue.phonetic = "Yeh yudh nahin, yeh ant hai."). Leave phonetic empty string when dialogue.text is empty or when language is English/Latin script only.
 3. Maintain VISUAL CONTINUITY: describe how each scene flows from the previous one. The character must look identical in all scenes (same face, same attire, same build).
 4. The "character" field is the SINGLE SOURCE OF TRUTH for the character's appearance — it will be copy-pasted into every image and video prompt. Make it extremely detailed.
 5. "narrativeArc" is a one-sentence summary of the entire emotional journey across ALL scenes combined.
@@ -32,7 +32,9 @@ CRITICAL RULES:
 9. "cameraWork" should be one of: "slow push-in", "static wide", "tracking shot from side-back angle", "extreme close-up static", "crane down", "handheld with tension shake".
 10. "dialogue.tone" must be one of: "commanding and calm", "heavy and burdened", "whisper-like and introspective", "broken and raw", "quiet and resolute".
 11. "dialogue.pacing" describes delivery rhythm: e.g. "slow with long pauses between words", "clipped and intense", "breathless", "each word deliberate".
-12. BE EXTREMELY DESCRIPTIVE: Write vivid, highly detailed, and cinematic descriptions for 'summary', 'location', and 'emotionalTone'. Use sensory details and dense atmospheric language.
+12. "dialogue.mode" MUST be either "character" (on-screen character speaks — default) or "narration" (voice-over / omniscient narrator, not lip-synced to a single visible speaker). Use "narration" when the script is clearly voice-over or narrator address; use "character" for an in-scene speaker; if ambiguous, use "character".
+13. dialogue.text (and dialogue.phonetic when present) must be speakable in under ~6 seconds — maximum 12 words total. If the script line is longer, truncate to the single most emotionally essential phrase. Do NOT split one spoken line across multiple scenes.
+14. BE EXTREMELY DESCRIPTIVE: Write vivid, highly detailed, and cinematic descriptions for 'summary', 'location', and 'emotionalTone'. Use sensory details and dense atmospheric language.
 
 Output ONLY a valid JSON object. No markdown fences, no explanation, no extra text.
 
@@ -50,7 +52,9 @@ Output ONLY a valid JSON object. No markdown fences, no explanation, no extra te
       "duration": 8,
       "dialogue": {
         "text": "The exact spoken line extracted from the script. If no dialogue in this scene, use empty string.",
+        "phonetic": "Romanized transliteration for Hindi/Sanskrit Devanagari lines; empty string if not applicable.",
         "language": "e.g. Hindi, English, Sanskrit",
+        "mode": "character",
         "tone": "commanding and calm",
         "pacing": "slow with deliberate pauses"
       },
@@ -140,6 +144,37 @@ function getImagePromptGenerationPrompt(scene, character, previousSceneImageDesc
   const charKeyFeature = typeof character === 'object' ? (character.keyFeature || '') : '';
   const envKeyFeature = environment?.keyFeature || scene.location || '';
 
+  const dlg = scene.dialogue || {};
+  const dialogueText = (dlg.text || scene.dialogueText || '').trim();
+  const dialogueTone = dlg.tone || scene.dialogueTone || 'calm and deliberate';
+  const dialoguePacing = dlg.pacing || scene.dialoguePacing || 'slow with natural pauses';
+  const dialogueLang = dlg.language || 'Hindi';
+  const dialoguePhonetic = (dlg.phonetic || '').trim();
+  const dialogueMode = dlg.mode === 'narration' ? 'narration' : 'character';
+  const hasDialogueLine = dialogueText.length > 0;
+  const showDialogueInputs =
+    hasDialogueLine || dialoguePhonetic.length > 0 || dlg.mode === 'narration';
+
+  let dialogueInputsBlock = '';
+  if (showDialogueInputs) {
+    dialogueInputsBlock = `
+Dialogue (for facial expression reference — never render subtitles or readable text in the image):
+Spoken line: ${hasDialogueLine ? `"${dialogueText}"` : '(none)'}
+Language: ${dialogueLang}
+Mode: ${dialogueMode}${dialogueMode === 'narration' ? ' (voice-over — on-screen character may appear silent or listening)' : ' (on-screen speech — mouth and jaw suitable for speaking this moment)'}
+Tone: ${dialogueTone}
+Pacing: ${dialoguePacing}${dialoguePhonetic ? `\nRomanized reference (for downstream video/audio): ${dialoguePhonetic}` : ''}`;
+  }
+
+  let expressionGuidance = '';
+  if (hasDialogueLine && dialogueMode === 'character') {
+    expressionGuidance = `Expression hint: the character is delivering this line — set EXPRESSION with mouth and jaw appropriate for speech at this intensity (${dialogueTone}), consistent with the moment; never add readable text or captions in the frame.`;
+  } else if (dialogueMode === 'narration' && hasDialogueLine) {
+    expressionGuidance = `Expression hint: voice-over / narration — keep the character's mouth neutral, softly closed, or listening; do not show active lip-sync speaking unless Action explicitly requires speech on camera. Match emotional tone "${scene.emotionalTone}" through eyes and brow.`;
+  } else if (dialogueMode === 'narration' && !hasDialogueLine) {
+    expressionGuidance = `Expression hint: narration mode — prefer neutral mouth or reflective stillness unless Action contradicts.`;
+  }
+
   const isFirstScene = sceneIndex === 0;
   const continuityNote = isFirstScene
     ? `This is scene 1 of ${totalScenes}. Establish the character clearly from scratch.`
@@ -160,13 +195,12 @@ Action: ${scene.summary}
 Location: ${scene.location}
 Time of Day: ${scene.timeOfDay}
 Emotional Tone: ${scene.emotionalTone}
-Camera Work: ${scene.cameraWork}
+Camera Work: ${scene.cameraWork}${dialogueInputsBlock}
 ${previousSceneImageDesc ? `Previous Scene Visual: ${previousSceneImageDesc}` : ''}
 ${customInstruction ? `Custom Instruction: ${customInstruction}` : ''}
 Continuity: ${continuityNote}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-Your output is a structured image generation prompt using LABELED BLOCKS.
+${expressionGuidance ? `${expressionGuidance}\n\n` : ''}Your output is a structured image generation prompt using LABELED BLOCKS.
 Each block is a discrete, self-contained instruction. Do NOT write flowing prose.
 The image model reads each block separately and applies it literally.
 
@@ -205,9 +239,11 @@ function getVideoPromptGenerationPrompt(scene, character, sceneIndex, totalScene
   const dialoguePacing = dlg.pacing || scene.dialoguePacing || 'slow with natural pauses';
   const outputLang = targetLanguage || dlg.language || 'Hindi';
   const hasDialogue = dialogueText.length > 0;
+  const dialoguePhonetic = (dlg.phonetic || '').trim() || dialogueText;
+  const dialogueMode = dlg.mode === 'narration' ? 'narration' : 'character';
 
   const dialogueBlock = hasDialogue
-    ? `DIALOGUE: "${dialogueText}" — spoken in ${outputLang}, tone: ${dialogueTone}, pacing: ${dialoguePacing}. Precise lip sync required. The spoken words are fixed — do NOT alter, add to, or replace this line.`
+    ? `DIALOGUE: "${dialogueText}" | phonetic: "${dialoguePhonetic}" | mode: ${dialogueMode} | tone: ${dialogueTone} | pacing: ${dialoguePacing}. The spoken words are fixed — do NOT alter, add to, or replace this line.`
     : `DIALOGUE: None. Character remains silent. Convey all emotion through facial micro-expressions and body language only.`;
 
   return `You are a cinematic video prompt engineer for AI video generators (Veo 3, Kling, Runway, Pika). You produce prompts for 9:16 portrait short-form clips.
@@ -252,6 +288,7 @@ CAMERA: [${scene.cameraWork}. Shot type, framing in 9:16, movement speed and dir
 ENVIRONMENT: [${envKeyFeature}. Background motion details — 2–3 specific subtle motions (e.g. "cloth fluttering in wind, dust drifting left, distant silhouettes barely moving"). Background must be blurred, not competing with character.]
 LIGHTING: [Light source, dominant color temperature, shadow direction on character's face, any temperature shift during clip]
 STYLE: ${VIDEO_QUALITY_TAIL}
+NEGATIVE: subtitles, captions, text overlay, watermark, blurry character, split screen, shaky unfocused background motion
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DURATION RULE: Return an integer — MUST be exactly 4, 6, or 8.
@@ -260,7 +297,7 @@ ${scene.duration === 4 ? 'Lean toward 4 for this tight, punchy scene.' : scene.d
 
 Output ONLY valid JSON. Nothing else.
 {
-  "videoPrompt": "CHARACTER: ... \\nCHARACTER_KEY_FEATURE: ... \\nACTION_START: ... \\nACTION_END: ... \\nDIALOGUE: ... \\nEXPRESSION_ARC: ... \\nCAMERA: ... \\nENVIRONMENT: ... \\nLIGHTING: ... \\nSTYLE: ${VIDEO_QUALITY_TAIL}",
+  "videoPrompt": "CHARACTER: ... \\nCHARACTER_KEY_FEATURE: ... \\nACTION_START: ... \\nACTION_END: ... \\nDIALOGUE: ... \\nEXPRESSION_ARC: ... \\nCAMERA: ... \\nENVIRONMENT: ... \\nLIGHTING: ... \\nSTYLE: ${VIDEO_QUALITY_TAIL} \\nNEGATIVE: subtitles, captions, text overlay, watermark, blurry character, split screen, shaky unfocused background motion",
   "duration": 8
 }`;
 }
@@ -282,11 +319,14 @@ Context:
 Rules:
 1. "duration" MUST be exactly 4, 6, or 8 (integer).
 2. "dialogue.text" — extract any spoken line from the description verbatim. If the dialogue is in Hindi/Hinglish write it in Devanagari script. If none, use empty string.
-3. "emotionalTone" must be granular and physical (e.g. "quiet devastation, jaw tight, eyes hollow").
-4. "location" must be vivid and atmospheric.
-5. "cameraWork" must be one of: "slow push-in", "static wide", "tracking shot from side-back angle", "extreme close-up static", "crane down", "handheld with tension shake".
-6. "dialogue.tone" must be one of: "commanding and calm", "heavy and burdened", "whisper-like and introspective", "broken and raw", "quiet and resolute", "calm and deliberate".
-7. Output ONLY valid JSON — no markdown fences, no explanation.
+3. If dialogue uses Hindi or Sanskrit in Devanagari, set "dialogue.phonetic" to a clean romanized transliteration; otherwise use empty string.
+4. "dialogue.mode" — "character" for in-scene speech, "narration" for voice-over/narrator cues inferred from the description; default "character".
+5. "dialogue.text" and "dialogue.phonetic" must each be at most 12 speakable words if present (truncate to the essential phrase if longer).
+6. "emotionalTone" must be granular and physical (e.g. "quiet devastation, jaw tight, eyes hollow").
+7. "location" must be vivid and atmospheric.
+8. "cameraWork" must be one of: "slow push-in", "static wide", "tracking shot from side-back angle", "extreme close-up static", "crane down", "handheld with tension shake".
+9. "dialogue.tone" must be one of: "commanding and calm", "heavy and burdened", "whisper-like and introspective", "broken and raw", "quiet and resolute", "calm and deliberate".
+10. Output ONLY valid JSON — no markdown fences, no explanation.
 
 {
   "title": "Short cinematic title (4–6 words)",
@@ -297,7 +337,9 @@ Rules:
   "duration": 8,
   "dialogue": {
     "text": "",
+    "phonetic": "",
     "language": "Hindi",
+    "mode": "character",
     "tone": "calm and deliberate",
     "pacing": "slow with natural pauses"
   },
