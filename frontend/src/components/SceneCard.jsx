@@ -1,5 +1,5 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
-import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile, Trash2, ChevronDown, ChevronUp, History } from 'lucide-react';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim();
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -37,6 +37,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const [imgModal, setImgModal] = useState(false);
   const [vidModal, setVidModal] = useState(false);
   const [scriptModal, setScriptModal] = useState(false);
+  const [historyModal, setHistoryModal] = useState(false);
   const [localImg, setLocalImg] = useState(scene.imagePrompt || '');
   const [localVid, setLocalVid] = useState(scene.videoPrompt || '');
   const [localDialogue, setLocalDialogue] = useState(scene.dialogue?.text || '');
@@ -365,6 +366,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               {status === 'generating_image_prompt' && <Btn onClick={handleStop} variant="danger" className="w-full text-xs"><Spinner size={12} color="border-white" />Stop</Btn>}
               {hasImgP && <Btn onClick={() => setImgModal(true)} variant={hasImg ? 'ghost' : 'primary'} className="flex-1 text-xs"><ImageIcon className={`w-4 h-4 ${hasImg ? 'text-green-500' : 'text-indigo-200'}`} /> {hasImg ? 'View Image' : 'Setup Image'}</Btn>}
               {hasImg && <Btn onClick={() => setVidModal(true)} variant={hasVid ? 'ghost' : 'primary'} className="flex-1 text-xs"><Film className={`w-4 h-4 ${hasVid ? 'text-green-500' : 'text-indigo-200'}`} /> {hasVid ? 'View Video' : 'Setup Video'}</Btn>}
+              {(imageGenerations.length + videoGenerations.length) > 0 && (
+                <Btn onClick={() => setHistoryModal(true)} variant="ghost" className="flex-1 text-xs"><History className="w-4 h-4 text-indigo-500" /> History ({imageGenerations.length + videoGenerations.length})</Btn>
+              )}
             </div>
           )}
 
@@ -381,6 +385,9 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
             <div className="mt-auto flex gap-2">
               {hasImg && <Btn onClick={() => setImgModal(true)} variant="ghost" className="flex-1 text-xs"><ImageIcon className={`w-4 h-4 ${hasImg ? 'text-green-500' : 'text-gray-400'}`} /> View Image</Btn>}
               {hasVid && <Btn onClick={() => setVidModal(true)} variant="ghost" className="flex-1 text-xs"><Film className={`w-4 h-4 ${hasVid ? 'text-green-500' : 'text-gray-400'}`} /> View Video</Btn>}
+              {(imageGenerations.length + videoGenerations.length) > 0 && (
+                <Btn onClick={() => setHistoryModal(true)} variant="ghost" className="flex-1 text-xs"><History className="w-4 h-4 text-indigo-500" /> History ({imageGenerations.length + videoGenerations.length})</Btn>
+              )}
             </div>
           )}
         </div>
@@ -667,6 +674,93 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               </div>
             </div>
           )}
+        </div>
+      </Modal>
+
+      {/* History Modal — all image and video attempts for this scene */}
+      <Modal isOpen={historyModal} onClose={() => setHistoryModal(false)} title={`${scene.title || `Scene ${index + 1}`} — All Generations`}>
+        <div className="flex flex-col gap-6">
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <ImageIcon className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-xs font-black text-indigo-800 uppercase tracking-widest">Image Attempts ({imageGenerations.length})</h3>
+            </div>
+            {imageGenerations.length === 0 ? (
+              <div className="text-xs text-gray-400 italic border-2 border-dashed border-gray-200 rounded-2xl px-4 py-6 text-center">No image attempts yet</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {imageGenerations.map((gen, gi) => (
+                  <div key={gen.id} className={`border rounded-2xl overflow-hidden text-gray-900 flex flex-col ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                      <span className="text-[11px] font-bold text-gray-500">Attempt {gi + 1}</span>
+                      <div className="flex items-center gap-1.5">
+                        {gen.isFinal ? (
+                          <span className="flex items-center gap-1 text-[10px] font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                            <Check className="w-2.5 h-2.5" strokeWidth={3} /> Final
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setFinalImageGeneration(gen.id)}
+                            className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition-colors"
+                          >
+                            Set as Final
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { if (window.confirm('Delete this image attempt?')) deleteImageGeneration(gen.id); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <img src={getMediaUrl(gen.imageUrl)} alt={`Image attempt ${gi + 1}`} className="w-full max-h-[260px] object-contain bg-black" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section>
+            <div className="flex items-center gap-2 mb-3">
+              <Film className="w-4 h-4 text-indigo-600" />
+              <h3 className="text-xs font-black text-indigo-800 uppercase tracking-widest">Video Attempts ({videoGenerations.length})</h3>
+            </div>
+            {videoGenerations.length === 0 ? (
+              <div className="text-xs text-gray-400 italic border-2 border-dashed border-gray-200 rounded-2xl px-4 py-6 text-center">No video attempts yet</div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {videoGenerations.map((gen, gi) => (
+                  <div key={gen.id} className={`border rounded-2xl overflow-hidden text-gray-900 flex flex-col ${gen.isFinal ? 'border-green-300 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100">
+                      <span className="text-[11px] font-bold text-gray-500">Attempt {gi + 1}</span>
+                      <div className="flex items-center gap-1.5">
+                        {gen.isFinal ? (
+                          <span className="flex items-center gap-1 text-[10px] font-black text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                            <Check className="w-2.5 h-2.5" strokeWidth={3} /> Final
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => setFinalGeneration(gen.id)}
+                            className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full hover:bg-indigo-100 transition-colors"
+                          >
+                            Set as Final
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { if (window.confirm('Delete this video attempt?')) deleteGeneration(gen.id); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </div>
+                    <video src={getMediaUrl(gen.videoUrl)} controls className="w-full max-h-[260px] object-contain bg-black" />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         </div>
       </Modal>
     </>

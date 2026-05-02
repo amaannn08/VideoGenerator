@@ -311,7 +311,13 @@ export default function App() {
               next.status = 'image_done';
             }
             if (updates.videoPrompt) next.videoPrompt = updates.videoPrompt;
-            if (updates.videoUrl) { next.videoUrl = updates.videoUrl; next.status='video_done'; }
+            if (updates.videoUrl) {
+              const prevVidGens = s.videoGenerations || [];
+              const vidGenId = data.generationId || Math.random().toString(36).substr(2,9);
+              next.videoGenerations = [...prevVidGens.map(g=>({...g,isFinal:false})), {id:vidGenId, videoUrl:updates.videoUrl, createdAt:Date.now(), isFinal:true}];
+              next.videoUrl = updates.videoUrl;
+              next.status = 'video_done';
+            }
             return next;
           }));
         }
