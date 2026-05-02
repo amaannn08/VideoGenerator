@@ -22,6 +22,7 @@ const googleAuth = new GoogleAuth({
 });
 
 // Configure fal with API key
+dotenv.config();
 fal.config({ credentials: process.env.FAL_KEY });
 
 // Language code map for Google Translate
@@ -31,7 +32,6 @@ const LANG_CODES = {
   Gujarati: 'gu', Kannada: 'kn', Malayalam: 'ml', Sanskrit: 'sa',
 };
 import { uploadToS3, extractS3KeyFromUrl, getPresignedReadUrlForKey } from './s3.js';
-dotenv.config();
 
 // Render deployment: decode base64 credentials to a temp file
 if (process.env.GOOGLE_CREDENTIALS_BASE64) {
@@ -475,6 +475,9 @@ app.post('/api/image', async (req, res) => {
     res.json({ imageUrl: publicUrl });
   } catch (error) {
     console.error('Error in /api/image:', error);
+    if (error.body && error.body.detail) {
+      console.error('Validation details:', JSON.stringify(error.body.detail, null, 2));
+    }
     res.status(500).json({ error: error.message });
   }
 });
@@ -496,9 +499,13 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId) {
   const useEdit = modelDef.supportsRef && referenceImageUrl?.startsWith('http') && modelDef.editEndpoint;
   const endpoint = useEdit ? modelDef.editEndpoint : modelDef.id;
 
-  const input = useEdit
-    ? { prompt: imagePrompt + ' 9:16 aspect ratio', image_urls: [referenceImageUrl], aspect_ratio: '9:16' }
-    : { prompt: imagePrompt + ' 9:16 aspect ratio', aspect_ratio: '9:16' };
+  const arParam = modelDef.arParam || 'image_size';
+  const arValue = modelDef.arValue || 'portrait_16_9';
+
+  const input = { prompt: imagePrompt, [arParam]: arValue };
+  if (useEdit) {
+    input.image_url = referenceImageUrl;
+  }
 
   console.log(`[fal image] endpoint=${endpoint} useEdit=${useEdit}`);
   const result = await fal.subscribe(endpoint, { input, logs: false });
@@ -510,7 +517,12 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId) {
   const fileName = `image_${Date.now()}.png`;
   const localPath = path.join(TMP_DIR, fileName);
   fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
-  return uploadToS3(localPath, 'image/png', 'images');
+  try {
+    return await uploadToS3(localPath, 'image/png', 'images');
+  } catch (s3Error) {
+    console.warn('[S3 Upload Fallback] S3 upload failed, returning raw Fal URL instead:', s3Error.message);
+    return falUrl;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -522,19 +534,51 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   const finalPrompt = toVeoPrompt(prompt, dialogue);
   const modelDef = FAL_VIDEO_MODELS.find(m => m.id === modelId) || FAL_VIDEO_MODELS[0];
 
-  const validDurations = [4, 6, 8];
-  const dur = validDurations.includes(parseInt(duration)) ? parseInt(duration) : 8;
-  const durationStr = `${dur}s`;
+  const durInt = parseInt(duration) || 5;
+  // Luma Ray 2 only accepts "5s" or "9s"
+  const lumaDurationStr = durInt <= 5 ? '5s' : '9s';
+  // Kling only accepts "5" or "10" (no 's')
+  const klingDurationStr = durInt <= 5 ? '5' : '10';
+  // Generic fallback
+  const durationStr = lumaDurationStr;
 
-  const hasPublicImage = imageUrl?.startsWith('http');
-  const endpoint = hasPublicImage && modelDef.supportsI2V ? modelDef.i2vEndpoint : modelDef.id;
+  let finalImageUrl = imageUrl;
+  const hasPublicImage = finalImageUrl?.startsWith('http');
 
-  const baseInput = { aspect_ratio: '9:16', duration: durationStr, resolution: '720p', generate_audio: modelDef.hasAudio };
-  const input = hasPublicImage && modelDef.supportsI2V
-    ? { ...baseInput, prompt: finalPrompt, image_url: imageUrl }
-    : { ...baseInput, prompt: finalPrompt };
+  // If the image is an unsigned S3 URL, Fal AI cannot download it (returns Unprocessable Entity)
+  if (hasPublicImage && finalImageUrl.includes('.s3.') && !finalImageUrl.includes('X-Amz-Credential')) {
+    try {
+      const key = extractS3KeyFromUrl(finalImageUrl);
+      if (key) {
+        finalImageUrl = await getPresignedReadUrlForKey(key);
+      }
+    } catch (e) {
+      console.warn('Failed to presign S3 image URL for video generation:', e.message);
+      throw new Error('Cannot use this image for video generation because your local environment lacks AWS credentials to make the S3 image publicly accessible to Fal AI.');
+    }
+  }
 
-  console.log(`[fal video] endpoint=${endpoint} i2v=${hasPublicImage && modelDef.supportsI2V} dur=${durationStr}`);
+  const useI2V = hasPublicImage && modelDef.supportsI2V;
+  const endpoint = useI2V ? modelDef.i2vEndpoint : modelDef.id;
+
+  // Build model-specific input — each model has a different schema
+  let input;
+  if (modelDef.inputSchema === 'minimax') {
+    // Minimax only accepts prompt (+ optional prompt_optimizer)
+    input = useI2V
+      ? { prompt: finalPrompt, image_url: finalImageUrl }
+      : { prompt: finalPrompt };
+  } else if (modelDef.inputSchema === 'kling') {
+    // Kling duration is "5" or "10" (no 's' suffix)
+    const base = { prompt: finalPrompt, duration: klingDurationStr, cfg_scale: 0.5 };
+    input = useI2V ? { ...base, image_url: finalImageUrl } : { ...base, aspect_ratio: '9:16' };
+  } else {
+    // Default: Luma Ray2, Hunyuan — duration as "Xs", aspect_ratio, resolution
+    const base = { prompt: finalPrompt, aspect_ratio: '9:16', duration: durationStr, resolution: '720p' };
+    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
+  }
+
+  console.log(`[fal video] endpoint=${endpoint} i2v=${useI2V} dur=${durationStr} schema=${modelDef.inputSchema||'default'}`);
   const result = await fal.subscribe(endpoint, { input, logs: false });
   const falUrl = result.data?.video?.url;
   if (!falUrl) throw new Error(`No video returned from fal (endpoint: ${endpoint})`);
@@ -545,7 +589,12 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   const localPath = path.join(TMP_DIR, fileName);
   fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
   console.log(`[fal video] saved to ${localPath}`);
-  return uploadToS3(localPath, 'video/mp4', s3Prefix);
+  try {
+    return await uploadToS3(localPath, 'video/mp4', s3Prefix);
+  } catch (s3Error) {
+    console.warn('[S3 Upload Fallback] S3 upload failed, returning raw Fal URL instead:', s3Error.message);
+    return falUrl;
+  }
 }
 
 app.post('/api/video', async (req, res) => {
@@ -556,6 +605,9 @@ app.post('/api/video', async (req, res) => {
     res.json({ videoUrl });
   } catch (error) {
     console.error('Error in /api/video:', error);
+    if (error.body && error.body.detail) {
+      console.error('Validation details:', JSON.stringify(error.body.detail, null, 2));
+    }
     res.status(500).json({ error: error.message });
   }
 });
