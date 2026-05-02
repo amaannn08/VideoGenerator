@@ -51,6 +51,12 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const [localTimeOfDay, setLocalTimeOfDay] = useState(scene.timeOfDay || '');
   const [localTitle, setLocalTitle] = useState(scene.title || '');
   const [localDuration, setLocalDuration] = useState(scene.duration || 8);
+  const [localAspectRatio, setLocalAspectRatio] = useState(scene.aspectRatio || '9:16');
+  const [localResolution, setLocalResolution] = useState(scene.resolution || '720p');
+  const [localNegativePrompt, setLocalNegativePrompt] = useState(scene.negativePrompt || '');
+  const [localCfgScale, setLocalCfgScale] = useState(scene.cfgScale !== undefined ? scene.cfgScale : 0.5);
+  const [localGenAudio, setLocalGenAudio] = useState(scene.generateAudio !== undefined ? scene.generateAudio : true);
+  
   const [imgCustomInstruction, setImgCustomInstruction] = useState(scene.imgCustomInstruction || '');
   const [vidCustomInstruction, setVidCustomInstruction] = useState(scene.vidCustomInstruction || '');
   const [scenePromptInput, setScenePromptInput] = useState('');
@@ -59,6 +65,8 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const [isRefreshingVideo, setIsRefreshingVideo] = useState(false);
   const [showGenerations, setShowGenerations] = useState(false);
   const [showImageGenerations, setShowImageGenerations] = useState(false);
+  const [showAdvancedImg, setShowAdvancedImg] = useState(false);
+  const [showAdvancedVid, setShowAdvancedVid] = useState(false);
   const abortRef = useRef(null);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
@@ -70,6 +78,11 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   useEffect(() => setLocalTimeOfDay(scene.timeOfDay || ''), [scene.timeOfDay]);
   useEffect(() => setLocalTitle(scene.title || ''), [scene.title]);
   useEffect(() => setLocalDuration(scene.duration || 8), [scene.duration]);
+  useEffect(() => setLocalAspectRatio(scene.aspectRatio || '9:16'), [scene.aspectRatio]);
+  useEffect(() => setLocalResolution(scene.resolution || '720p'), [scene.resolution]);
+  useEffect(() => setLocalNegativePrompt(scene.negativePrompt || ''), [scene.negativePrompt]);
+  useEffect(() => setLocalCfgScale(scene.cfgScale !== undefined ? scene.cfgScale : 0.5), [scene.cfgScale]);
+  useEffect(() => setLocalGenAudio(scene.generateAudio !== undefined ? scene.generateAudio : true), [scene.generateAudio]);
   useEffect(() => setImgCustomInstruction(scene.imgCustomInstruction || ''), [scene.imgCustomInstruction]);
   useEffect(() => setVidCustomInstruction(scene.vidCustomInstruction || ''), [scene.vidCustomInstruction]);
   
@@ -175,7 +188,21 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const genImage = async () => {
     updateScene(scene.id, { status: 'image_generating' });
     try {
-      const r = await fetch(`${API}/api/image`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ imagePrompt: scene.imagePrompt, referenceImage: previousSceneImage, modelId: imageModelId }), signal: signal() });
+      const options = {
+        aspect_ratio: localAspectRatio === '9:16' ? 'portrait_16_9' : localAspectRatio === '16:9' ? 'landscape_16_9' : 'square',
+        negative_prompt: localNegativePrompt
+      };
+      const r = await fetch(`${API}/api/image`, { 
+        method: 'POST', 
+        headers: { 'Content-Type': 'application/json' }, 
+        body: JSON.stringify({ 
+          imagePrompt: scene.imagePrompt, 
+          referenceImage: previousSceneImage, 
+          modelId: imageModelId,
+          options
+        }), 
+        signal: signal() 
+      });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
       const genId = Math.random().toString(36).substr(2, 9);
@@ -234,10 +261,24 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const genVideo = async () => {
     updateScene(scene.id, { status: 'video_generating' });
     try {
+      const options = {
+        aspect_ratio: localAspectRatio,
+        resolution: localResolution,
+        negative_prompt: localNegativePrompt,
+        cfg_scale: localCfgScale,
+        generate_audio: localGenAudio
+      };
       const r = await fetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoPrompt: scene.videoPrompt, imageUrl: activeImageUrl, duration: scene.duration, dialogue: scene.dialogue, modelId: videoModelId }),
+        body: JSON.stringify({ 
+          videoPrompt: scene.videoPrompt, 
+          imageUrl: activeImageUrl, 
+          duration: scene.duration, 
+          dialogue: scene.dialogue, 
+          modelId: videoModelId,
+          options
+        }),
         signal: signal(),
       });
       const d = await r.json();
@@ -500,7 +541,16 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
             <textarea value={localImg} onChange={e => setLocalImg(e.target.value)} onBlur={() => updateScene(scene.id, { imagePrompt: localImg })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 mb-2 focus:ring-4 focus:ring-indigo-500/20 bg-white text-gray-900 resize-none font-medium leading-relaxed min-h-[150px]" />
             
             <div className="space-y-1.5 mb-2 bg-white/50 p-2.5 rounded-xl border border-indigo-100">
-              <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
+              <div className="flex justify-between items-center mb-1">
+                <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
+                <button 
+                  onClick={() => setShowAdvancedImg(!showAdvancedImg)}
+                  className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1"
+                >
+                  {showAdvancedImg ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                  {showAdvancedImg ? 'Hide Advanced' : 'Show Advanced'}
+                </button>
+              </div>
               <div className="flex gap-2">
                 <input 
                   type="text" 
@@ -512,6 +562,35 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                 />
                 <button onClick={genImgPrompt} disabled={isGenerating} className="text-xs font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg disabled:opacity-50 shrink-0 flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Regenerate</button>
               </div>
+
+              {showAdvancedImg && (
+                <div className="mt-3 pt-3 border-t border-indigo-100 space-y-3">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Aspect Ratio</label>
+                      <select 
+                        value={localAspectRatio} 
+                        onChange={e => { setLocalAspectRatio(e.target.value); updateScene(scene.id, { aspectRatio: e.target.value }); }}
+                        className="w-full text-xs border border-indigo-100 rounded-lg px-2 py-1.5 focus:outline-none text-gray-900 bg-white"
+                      >
+                        <option value="9:16">9:16 (Portrait)</option>
+                        <option value="16:9">16:9 (Landscape)</option>
+                        <option value="1:1">1:1 (Square)</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Negative Prompt</label>
+                    <textarea 
+                      value={localNegativePrompt} 
+                      onChange={e => { setLocalNegativePrompt(e.target.value); updateScene(scene.id, { negativePrompt: e.target.value }); }}
+                      placeholder="e.g. blurry, low quality, distorted hands"
+                      className="w-full text-[11px] border border-indigo-100 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white resize-none"
+                      rows={2}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {hasImgP && <Btn onClick={status === 'image_generating' ? handleStop : genImage} variant={status === 'image_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-auto shrink-0">{status === 'image_generating' ? <><Spinner size={18} color="border-white" />Stop</> : imageGenerations.length > 0 ? 'Generate Another Attempt' : 'Generate Image'}</Btn>}
@@ -636,7 +715,16 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                   <textarea value={localVid} onChange={e => setLocalVid(e.target.value)} onBlur={() => updateScene(scene.id, { videoPrompt: localVid })} className="flex-1 w-full text-base border-0 shadow-sm rounded-xl p-3 focus:ring-4 focus:ring-indigo-500/20 bg-white text-gray-900 resize-none font-medium leading-relaxed min-h-[150px]" />
                   
                   <div className="space-y-1.5 mt-2 bg-white/50 p-2.5 rounded-xl border border-indigo-100">
-                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
+                    <div className="flex justify-between items-center mb-1">
+                      <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Custom Instruction (Optional)</label>
+                      <button 
+                        onClick={() => setShowAdvancedVid(!showAdvancedVid)}
+                        className="text-[10px] font-bold text-indigo-500 hover:text-indigo-700 flex items-center gap-1"
+                      >
+                        {showAdvancedVid ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        {showAdvancedVid ? 'Hide Advanced' : 'Show Advanced Settings'}
+                      </button>
+                    </div>
                     <div className="flex gap-2">
                       <input 
                         type="text" 
@@ -648,6 +736,64 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                       />
                       <button onClick={genVidPrompt} disabled={isGenerating} className="text-xs font-bold bg-indigo-100 border border-indigo-200 text-indigo-700 hover:bg-indigo-200 px-4 py-2 rounded-lg disabled:opacity-50 shrink-0 flex items-center gap-1"><RefreshCw className="w-3 h-3" /> Regenerate</button>
                     </div>
+
+                    {showAdvancedVid && (
+                      <div className="mt-3 pt-3 border-t border-indigo-100 space-y-3">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Aspect Ratio</label>
+                            <select 
+                              value={localAspectRatio} 
+                              onChange={e => { setLocalAspectRatio(e.target.value); updateScene(scene.id, { aspectRatio: e.target.value }); }}
+                              className="w-full text-xs border border-indigo-100 rounded-lg px-2 py-1.5 focus:outline-none text-gray-900 bg-white"
+                            >
+                              <option value="9:16">9:16 (Portrait)</option>
+                              <option value="16:9">16:9 (Landscape)</option>
+                              <option value="1:1">1:1 (Square)</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Resolution</label>
+                            <select 
+                              value={localResolution} 
+                              onChange={e => { setLocalResolution(e.target.value); updateScene(scene.id, { resolution: e.target.value }); }}
+                              className="w-full text-xs border border-indigo-100 rounded-lg px-2 py-1.5 focus:outline-none text-gray-900 bg-white"
+                            >
+                              <option value="720p">720p</option>
+                              <option value="1080p">1080p</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">CFG Scale ({localCfgScale})</label>
+                            <input 
+                              type="range" min="0" max="1" step="0.1"
+                              value={localCfgScale} 
+                              onChange={e => { setLocalCfgScale(parseFloat(e.target.value)); updateScene(scene.id, { cfgScale: parseFloat(e.target.value) }); }}
+                              className="w-full accent-indigo-500"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2 pt-4">
+                            <input 
+                              type="checkbox" id={`audio-${scene.id}`}
+                              checked={localGenAudio} 
+                              onChange={e => { setLocalGenAudio(e.target.checked); updateScene(scene.id, { generateAudio: e.target.checked }); }}
+                              className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500"
+                            />
+                            <label htmlFor={`audio-${scene.id}`} className="text-[10px] font-black text-indigo-600 uppercase tracking-widest cursor-pointer">Generate Audio</label>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Negative Prompt</label>
+                          <textarea 
+                            value={localNegativePrompt} 
+                            onChange={e => { setLocalNegativePrompt(e.target.value); updateScene(scene.id, { negativePrompt: e.target.value }); }}
+                            placeholder="e.g. blurry, low quality, distorted"
+                            className="w-full text-[11px] border border-indigo-100 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white resize-none"
+                            rows={2}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {hasVidP && (

@@ -469,12 +469,27 @@ app.post('/api/prompts/video', async (req, res) => {
 
 app.post('/api/image', async (req, res) => {
   try {
-    const { imagePrompt, referenceImage, modelId } = req.body;
+    const { imagePrompt, referenceImage, modelId, options } = req.body;
     if (!imagePrompt) return res.status(400).json({ error: 'imagePrompt is required' });
-    const publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, modelId || DEFAULT_IMAGE_MODEL_ID));
+    const publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, modelId || DEFAULT_IMAGE_MODEL_ID, options));
     res.json({ imageUrl: publicUrl });
   } catch (error) {
     console.error(`Error in /api/image [model=${req.body?.modelId}]:`, error.message);
+    if (error.body) {
+      console.error('Error body:', JSON.stringify(error.body, null, 2));
+    }
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post('/api/video', async (req, res) => {
+  try {
+    const { videoPrompt, imageUrl, duration, dialogue, modelId, options } = req.body;
+    if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
+    const publicUrl = await withRetry(() => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId }));
+    res.json({ videoUrl: publicUrl });
+  } catch (error) {
+    console.error(`Error in /api/video [model=${req.body?.modelId}]:`, error.message);
     if (error.body) {
       console.error('Error body:', JSON.stringify(error.body, null, 2));
     }
@@ -494,20 +509,24 @@ app.get('/api/models', (_req, res) => {
 // FAL IMAGE GENERATION HELPER
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function generateFalImage(imagePrompt, referenceImageUrl, modelId) {
+async function generateFalImage(imagePrompt, referenceImageUrl, modelId, options = {}) {
   const modelDef = FAL_IMAGE_MODELS.find(m => m.id === modelId) || FAL_IMAGE_MODELS[0];
   const useEdit = modelDef.supportsRef && referenceImageUrl?.startsWith('http') && modelDef.editEndpoint;
   const endpoint = useEdit ? modelDef.editEndpoint : modelDef.id;
 
   const arParam = modelDef.arParam || 'image_size';
-  const arValue = modelDef.arValue || 'portrait_16_9';
+  const arValue = options.aspect_ratio || modelDef.arValue || 'portrait_16_9';
 
-  const input = { prompt: imagePrompt, [arParam]: arValue };
+  const input = { 
+    prompt: imagePrompt, 
+    [arParam]: arValue,
+    ...(options.negative_prompt ? { negative_prompt: options.negative_prompt } : {})
+  };
   if (useEdit) {
     input.image_url = referenceImageUrl;
   }
 
-  console.log(`[fal image] endpoint=${endpoint} useEdit=${useEdit}`);
+  console.log(`[fal image] endpoint=${endpoint} useEdit=${useEdit} ar=${arValue}`);
   const result = await fal.subscribe(endpoint, { input, logs: false });
   const falUrl = result.data?.images?.[0]?.url;
   if (!falUrl) throw new Error('No image returned from fal');
@@ -568,6 +587,12 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   const endpoint = useI2V ? modelDef.i2vEndpoint : modelDef.id;
 
   // Build model-specific input — each model has a different schema
+  const aspectRatio = options.aspect_ratio || '9:16';
+  const resolution = options.resolution || '720p';
+  const negativePrompt = options.negative_prompt || '';
+  const cfgScale = options.cfg_scale !== undefined ? options.cfg_scale : 0.5;
+  const shouldGenAudio = options.generate_audio !== undefined ? options.generate_audio : modelDef.hasAudio;
+
   let input;
   if (modelDef.inputSchema === 'minimax') {
     // Minimax only accepts prompt (+ optional prompt_optimizer)
@@ -576,22 +601,45 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
       : { prompt: finalPrompt };
   } else if (modelDef.inputSchema === 'kling') {
     // Kling duration is "5" or "10" (no 's' suffix)
-    const base = { prompt: finalPrompt, duration: klingDurationStr, cfg_scale: 0.5 };
-    if (modelDef.hasAudio) base.generate_audio = true;
-    input = useI2V ? { ...base, image_url: finalImageUrl } : { ...base, aspect_ratio: '9:16' };
+    const base = { 
+      prompt: finalPrompt, 
+      duration: klingDurationStr, 
+      cfg_scale: cfgScale,
+      aspect_ratio: aspectRatio,
+      negative_prompt: negativePrompt,
+      generate_audio: shouldGenAudio
+    };
+    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   } else if (modelDef.inputSchema === 'wan') {
     // WAN 2.1 I2V — no duration field, uses aspect_ratio + resolution
-    const base = { prompt: finalPrompt, aspect_ratio: '9:16', resolution: '720p' };
+    const base = { 
+      prompt: finalPrompt, 
+      aspect_ratio: aspectRatio, 
+      resolution: resolution,
+      negative_prompt: negativePrompt
+    };
     input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   } else if (modelDef.inputSchema === 'veo') {
     // Veo 3.1 — duration as "Xs", aspect_ratio, resolution, generate_audio
-    const base = { prompt: finalPrompt, aspect_ratio: '16:9', duration: durationStr, resolution: '720p' };
-    if (modelDef.hasAudio) base.generate_audio = true;
+    const base = { 
+      prompt: finalPrompt, 
+      aspect_ratio: aspectRatio, 
+      duration: durationStr, 
+      resolution: resolution,
+      negative_prompt: negativePrompt,
+      generate_audio: shouldGenAudio
+    };
     input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   } else {
     // Default: Luma Ray2, Hunyuan — duration as "Xs", aspect_ratio, resolution
-    const base = { prompt: finalPrompt, aspect_ratio: '9:16', duration: durationStr, resolution: '720p' };
-    if (modelDef.hasAudio) base.generate_audio = true;
+    const base = { 
+      prompt: finalPrompt, 
+      aspect_ratio: aspectRatio, 
+      duration: durationStr, 
+      resolution: resolution,
+      negative_prompt: negativePrompt,
+      generate_audio: shouldGenAudio
+    };
     input = useI2V ? { ...base, image_url: finalImageUrl } : base;
   }
 
