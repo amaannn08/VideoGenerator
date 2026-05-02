@@ -82,6 +82,17 @@ export const FAL_VIDEO_MODELS = [
     speed: 'medium',
   },
   {
+    id: 'fal-ai/veo3.1/lite',
+    label: 'Veo 3.1 Lite',
+    sublabel: 'Google · Fast Preview with Audio',
+    supportsI2V: false,
+    allowedDurations: [4, 6, 8],
+    hasAudio: true,
+    maxDuration: 8,
+    recommended: false,
+    speed: 'fast',
+  },
+  {
     id: 'fal-ai/kling-video/v2.6/pro/text-to-video',
     label: 'Kling 2.6 Pro',
     sublabel: 'Kuaishou · V2.6 with Audio',
