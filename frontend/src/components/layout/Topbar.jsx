@@ -1,10 +1,15 @@
 import React from 'react';
-import { Clapperboard, Plus, LogOut, Film, Image as ImageIcon, Video } from 'lucide-react';
+import { Clapperboard, Plus, LogOut, Film, Image as ImageIcon, Video, Save } from 'lucide-react';
 import { FAL_IMAGE_MODELS, FAL_VIDEO_MODELS } from '../../falModels';
 
-export default function Topbar({ onNew, onLogout, onOpenReel, hasScenes, imageModelId, videoModelId, onOpenModels }) {
+export default function Topbar({ onNew, onLogout, onOpenReel, hasScenes, imageModelId, videoModelId, onOpenModels, onSave, saveStatus = 'idle' }) {
   const imgModel = FAL_IMAGE_MODELS.find(m => m.id === imageModelId);
   const vidModel = FAL_VIDEO_MODELS.find(m => m.id === videoModelId);
+
+  const saveLabel = saveStatus === 'saving' ? 'Saving…'
+                  : saveStatus === 'saved'  ? 'Saved ✓'
+                  : saveStatus === 'error'  ? 'Error ✗'
+                  : 'Save';
 
   return (
     <header className="topbar">
@@ -65,6 +70,14 @@ export default function Topbar({ onNew, onLogout, onOpenReel, hasScenes, imageMo
             <Film size={13} /> Final Reel
           </button>
         )}
+        <button
+          className="btn btn-outline-amber btn-sm"
+          onClick={onSave}
+          disabled={saveStatus === 'saving'}
+          style={{ gap: 6, opacity: saveStatus === 'saving' ? 0.6 : 1 }}
+        >
+          <Save size={13} /> {saveLabel}
+        </button>
         <button className="btn btn-outline-amber btn-sm" onClick={onNew}>
           <Plus size={13} /> New Script
         </button>

@@ -75,6 +75,12 @@ export default function App() {
     });
   }, []);
 
+  const applySessionId = useCallback((sid) => {
+    setSessionId(sid);
+    sessionIdRef.current = sid;
+    window.history.replaceState({}, '', '?session=' + sid);
+  }, []);
+
   // ── Persistent state ───────────────────────────────────────────────────
   const [globalCharacters, setGlobalCharacters]       = useLocalStorage('ai-video-characters', []);
   const [primaryCharacterId, setPrimaryCharacterId]   = useLocalStorage('ai-video-primary-character-id', '');
@@ -94,8 +100,12 @@ export default function App() {
   const [autoRunStage, setAutoRunStage]               = useState('idle');
   const [autoRunCurrentScene, setAutoRunCurrentScene] = useState(null);
   const [, setAutoRunProgress]                        = useState({});
+  const [saveStatus, setSaveStatus]                   = useState('idle'); // 'idle'|'saving'|'saved'|'error'
+  const saveTimerRef                                  = useRef(null);
   const sseRef                                        = useRef(null);
   const [sessionId, setSessionId]                     = useState(() => new URLSearchParams(window.location.search).get('session'));
+  const sessionIdRef                                  = useRef(new URLSearchParams(window.location.search).get('session'));
+  const creatingSessionRef                            = useRef(false);
   const [isInitializing, setIsInitializing]           = useState(!!new URLSearchParams(window.location.search).get('session'));
   const [allSessions, setAllSessions]                 = useState([]);
   const [activeTab, setActiveTab]                     = useState('script');
@@ -211,16 +221,21 @@ export default function App() {
     const t = setTimeout(async () => {
       try {
         const body = JSON.stringify({ script, globalCharacter:activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage });
-        if (!sessionId) {
-          const res = await authenticatedFetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body });
-          const d = await res.json();
-          if (d.sessionId) {
-            setSessionId(d.sessionId);
-            window.history.replaceState({}, '', '?session='+d.sessionId);
-            authenticatedFetch(`${API}/api/sessions`).then(r=>r.json()).then(d=>{ if(d.sessions) setAllSessions(d.sessions); }).catch(()=>{});
+        if (!sessionIdRef.current) {
+          if (creatingSessionRef.current) return;
+          creatingSessionRef.current = true;
+          try {
+            const res = await authenticatedFetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+            const d = await res.json();
+            if (d.sessionId) {
+              applySessionId(d.sessionId);
+              authenticatedFetch(`${API}/api/sessions`).then(r=>r.json()).then(d=>{ if(d.sessions) setAllSessions(d.sessions); }).catch(()=>{});
+            }
+          } finally {
+            creatingSessionRef.current = false;
           }
         } else {
-          await authenticatedFetch(`${API}/api/sessions/${sessionId}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
+          await authenticatedFetch(`${API}/api/sessions/${sessionIdRef.current}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
         }
       } catch(err) { console.error('Auto-save error:', err); }
     }, 1500);
@@ -245,6 +260,7 @@ export default function App() {
     setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
     window.localStorage.clear();
     setSessionId(null);
+    sessionIdRef.current = null;
     window.history.replaceState({}, '', window.location.pathname);
   };
 
@@ -259,6 +275,7 @@ export default function App() {
       setAutoRunStage('idle'); setAutoRunCurrentScene(null); setAutoRunProgress({});
       setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
       setSessionId(null);
+      sessionIdRef.current = null;
       setAllSessions(prev=>prev.filter(s=>s.id!==d.id));
       window.history.replaceState({}, '', window.location.pathname);
     } catch(err) { alert(`Delete failed: ${err.message}`); }
@@ -269,14 +286,6 @@ export default function App() {
     if (!script.trim()) return;
     setLoadingScenes(true);
     try {
-      let sid = sessionId;
-      if (!sid) {
-        const res = await authenticatedFetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
-        const data = await res.json();
-        sid = data.sessionId;
-        setSessionId(sid);
-        window.history.replaceState({}, '', '?session='+sid);
-      }
       const r = await authenticatedFetch(`${API}/api/scenes`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({script,sceneCount}) });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
@@ -385,6 +394,29 @@ export default function App() {
   };
 
   const handleStopAutoRun = () => { if (sseRef.current) sseRef.current.close(); setAutoRunStage('idle'); setAutoRunCurrentScene(null); };
+
+  // ── Manual save ────────────────────────────────────────────────────────
+  const handleManualSave = useCallback(async () => {
+    setSaveStatus('saving');
+    try {
+      const body = JSON.stringify({ script, globalCharacter:activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage });
+      if (!sessionIdRef.current) {
+        const res = await authenticatedFetch(`${API}/api/sessions`, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        applySessionId(d.sessionId);
+        authenticatedFetch(`${API}/api/sessions`).then(r=>r.json()).then(d=>{ if(d.sessions) setAllSessions(d.sessions); }).catch(()=>{});
+      } else {
+        const res = await authenticatedFetch(`${API}/api/sessions/${sessionIdRef.current}`, { method:'PUT', headers:{'Content-Type':'application/json'}, body });
+        if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
+      }
+      setSaveStatus('saved');
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+    } catch {
+      setSaveStatus('error');
+    }
+  }, [script, activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage, authenticatedFetch, applySessionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Merge ──────────────────────────────────────────────────────────────
   const handleMerge = async () => {
@@ -515,6 +547,8 @@ export default function App() {
           imageModelId={imageModelId}
           videoModelId={videoModelId}
           onOpenModels={() => setActiveTab('models')}
+          onSave={handleManualSave}
+          saveStatus={saveStatus}
         />
 
       <div className="app-body">
