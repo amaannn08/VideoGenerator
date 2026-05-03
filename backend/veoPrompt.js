@@ -54,24 +54,17 @@ export function assembleVeoPrompt(blocks, dialogue) {
 
   const dialogueLine = buildVeoDialogueLine(dialogue);
   if (dialogueLine) {
-    parts.push(dialogueLine);
-  } else {
-    parts.push(
-      `The character remains silent — all emotion conveyed through ${expressionArc || 'subtle expression and posture'}`
-    );
+    parts.push(`Sound and audio: ${dialogueLine}`);
   }
 
-  if (camera) parts.push(`The camera ${camera}`);
-  if (environment) parts.push(environment);
-  if (lighting) parts.push(lighting);
+  if (camera) parts.push(`Cinematography: The camera ${camera}`);
+  if (environment) parts.push(`Environment: ${environment}`);
+  if (lighting) parts.push(`Lighting: ${lighting}`);
 
-  parts.push('No subtitles. No text overlay. No captions.');
-  parts.push(
-    'Cinematic quality, realistic motion, depth of field, character always in sharp focus.'
-  );
+  parts.push('Style: Cinematic quality, realistic motion, depth of field, character always in sharp focus. No subtitles, no text, no captions.');
 
   if (negative) {
-    parts.push(`Avoid or exclude: ${negative}.`);
+    parts.push(`Constraints: Avoid ${negative}.`);
   }
 
   return parts.filter(Boolean).join(' ');

@@ -639,14 +639,19 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   }
 
   const useI2V = hasPublicImage && modelDef.supportsI2V;
-  const endpoint = useI2V ? modelDef.i2vEndpoint : modelDef.id;
+  const endpoint = useI2V ? (modelDef.i2vEndpoint || modelDef.id) : modelDef.id;
 
-  // Build model-specific input — each model has a different schema
-  const aspectRatio = options.aspect_ratio || '9:16';
+  // Normalize aspect ratio
+  const arMap = { 'portrait_16_9': '9:16', 'landscape_16_9': '16:9', 'square': '1:1' };
+  const inputAR = options.aspect_ratio || modelDef.arValue || '9:16';
+  const aspectRatio = arMap[inputAR] || inputAR;
+
   const resolution = options.resolution || '720p';
   const negativePrompt = options.negative_prompt || '';
   const cfgScale = options.cfg_scale !== undefined ? options.cfg_scale : 0.5;
   const shouldGenAudio = options.generate_audio !== undefined ? options.generate_audio : modelDef.hasAudio;
+
+  console.log(`[Fal Video Debug] model=${modelId} endpoint=${endpoint} ar=${aspectRatio} i2v=${useI2V}`);
 
   let input;
   if (modelDef.inputSchema === 'minimax') {

@@ -86,7 +86,7 @@ export const FAL_VIDEO_MODELS = [
     id: 'fal-ai/veo3.1/lite',
     label: 'Veo 3.1 Lite',
     sublabel: 'Google · Fast Preview + Native Audio',
-    supportsI2V: false,
+    supportsI2V: true,
     allowedDurations: [4, 6, 8],
     hasAudio: true,
     maxDuration: 8,
