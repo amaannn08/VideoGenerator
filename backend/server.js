@@ -14,7 +14,20 @@ import { toVeoPrompt } from './veoPrompt.js';
 import { initDb, query } from './db.js';
 import { fal } from '@fal-ai/client';
 import { GoogleAuth } from 'google-auth-library';
-import { FAL_IMAGE_MODELS, FAL_VIDEO_MODELS, DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './models.js';
+import {
+  FAL_IMAGE_MODELS,
+  FAL_VIDEO_MODELS,
+  DEFAULT_IMAGE_MODEL_ID,
+  DEFAULT_VIDEO_MODEL_ID,
+  findVideoModel,
+} from './models.js';
+import {
+  buildFalVideoInput,
+  assertVeoI2vImagePreflight,
+  isNoMediaGeneratedError,
+  serializeFalError,
+  probeImageDimensions,
+} from './falVideoInputs.js';
 
 // Google Auth client for Translation API only
 const googleAuth = new GoogleAuth({
@@ -81,20 +94,43 @@ const GOOGLE_API_KEY = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function withRetry(operation, maxRetries = 3, delayMs = 3000) {
+async function withRetry(operation, maxRetries = 3, delayMs = 3000, isRetriableError = null) {
   let lastError;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       return await operation();
     } catch (e) {
       lastError = e;
-      console.warn(`[Retry] Attempt ${attempt}/${maxRetries} failed: ${e.message}`);
-      if (attempt < maxRetries) {
-        await new Promise(res => setTimeout(res, delayMs));
-      }
+      const falDetail = e?.body != null ? ` ${JSON.stringify(e.body)}` : '';
+      console.warn(`[Retry] Attempt ${attempt}/${maxRetries} failed: ${e.message}${falDetail}`);
+      const retriable = isRetriableError ? isRetriableError(e) : true;
+      if (!retriable || attempt >= maxRetries) break;
+      await new Promise((res) => setTimeout(res, delayMs));
     }
   }
   throw lastError;
+}
+
+/** Infer image/* MIME so fal.storage.upload does not default to application/octet-stream (.octet URLs). */
+function sniffImageMimeType(arrayBuffer) {
+  const b = new Uint8Array(arrayBuffer.slice(0, 16));
+  if (b.length >= 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'image/jpeg';
+  if (b.length >= 4 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47) return 'image/png';
+  if (b.length >= 4 && b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return 'image/gif';
+  if (b.length >= 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) {
+    const tag = String.fromCharCode(b[8], b[9], b[10], b[11]);
+    if (tag === 'WEBP') return 'image/webp';
+  }
+  return 'image/png';
+}
+
+function mimeTypeFromFilePath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.png') return 'image/png';
+  if (ext === '.webp') return 'image/webp';
+  if (ext === '.gif') return 'image/gif';
+  return null;
 }
 
 function extractJson(text) {
@@ -515,7 +551,7 @@ app.post('/api/image', authenticate, async (req, res) => {
     if (error.body) {
       console.error('Error body:', JSON.stringify(error.body, null, 2));
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json(serializeFalError(error));
   }
 });
 
@@ -527,14 +563,19 @@ app.post('/api/video', authenticate, async (req, res) => {
   try {
     const { videoPrompt, imageUrl, duration, dialogue, modelId, options } = req.body;
     if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
-    const publicUrl = await withRetry(() => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID }));
+    const publicUrl = await withRetry(
+      () => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID }),
+      3,
+      3000,
+      (e) => !isNoMediaGeneratedError(e)
+    );
     res.json({ videoUrl: publicUrl });
   } catch (error) {
     console.error(`Error in /api/video [model=${req.body?.modelId}]:`, error.message);
     if (error.body) {
       console.error('Error body:', JSON.stringify(error.body, null, 2));
     }
-    res.status(500).json({ error: error.message });
+    res.status(500).json(serializeFalError(error));
   }
 });
 
@@ -572,13 +613,24 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId, options
     arValue = reverseArMap[arValue];
   }
 
-  const input = { 
-    prompt: imagePrompt, 
+  const input = {
+    prompt: imagePrompt,
     [arParam]: arValue,
-    ...(options.negative_prompt ? { negative_prompt: options.negative_prompt } : {})
+    ...(options.negative_prompt ? { negative_prompt: options.negative_prompt } : {}),
   };
+  if (modelDef.defaultStyle) {
+    input.style = options.style || modelDef.defaultStyle;
+  }
+  if (options.resolution && modelDef.id.includes('nano-banana')) {
+    input.resolution = options.resolution;
+  }
   if (useEdit) {
-    input.image_url = referenceImageUrl;
+    const refField = modelDef.editImageField || 'image_url';
+    if (refField === 'image_urls') {
+      input.image_urls = [referenceImageUrl];
+    } else {
+      input.image_url = referenceImageUrl;
+    }
   }
 
   console.log(`[fal image] Final Config: endpoint=${endpoint} param=${arParam} value=${arValue}`);
@@ -607,103 +659,107 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId, options
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos', options = {}) {
-  const { dialogue, modelId } = options;
-  const finalPrompt = toVeoPrompt(prompt, dialogue);
-  const modelDef = FAL_VIDEO_MODELS.find(m => m.id === modelId) || FAL_VIDEO_MODELS[0];
+  const { dialogue, modelId: rawModelId } = options;
+  const truncatedPrompt = prompt.substring(0, 2000);
+  const finalPrompt = toVeoPrompt(truncatedPrompt, dialogue);
+  const modelDef = findVideoModel(rawModelId || DEFAULT_VIDEO_MODEL_ID);
 
-  const durInt = parseInt(duration) || 5;
-  const allowed = modelDef.allowedDurations || [5];
-  // Snap to nearest allowed duration
-  const snappedDur = allowed.reduce((prev, curr) => 
+  const durInt = parseInt(String(duration), 10) || 5;
+  const hasPublicImageEarly = imageUrl?.startsWith('http');
+  const wouldI2v = hasPublicImageEarly && modelDef.supportsI2V;
+  const allowedList =
+    wouldI2v && modelDef.allowedDurationsI2v?.length
+      ? modelDef.allowedDurationsI2v
+      : modelDef.allowedDurations || [5];
+  const snappedDur = allowedList.reduce((prev, curr) =>
     Math.abs(curr - durInt) < Math.abs(prev - durInt) ? curr : prev
   );
 
-  const durationStr = `${snappedDur}s`;
-  const klingDurationStr = `${snappedDur}`;
-  const veoDurationStr = `${snappedDur}s`;
-
   let finalImageUrl = imageUrl;
-  const hasPublicImage = finalImageUrl?.startsWith('http');
 
-  // If the image is an unsigned S3 URL, Fal AI cannot download it (returns Unprocessable Entity)
-  if (hasPublicImage && finalImageUrl.includes('.s3.') && !finalImageUrl.includes('X-Amz-Credential')) {
+  if (finalImageUrl && finalImageUrl.startsWith('http') && !finalImageUrl.includes('fal.media')) {
     try {
-      const key = extractS3KeyFromUrl(finalImageUrl);
-      if (key) {
-        finalImageUrl = await getPresignedReadUrlForKey(key);
+      console.log(`[Fal Video] Proxying image through Fal storage for reliability...`);
+      const resp = await fetch(finalImageUrl);
+      if (resp.ok) {
+        const buffer = await resp.arrayBuffer();
+        const headerCt = resp.headers.get('content-type')?.split(';')[0]?.trim();
+        let mime = headerCt && headerCt !== 'application/octet-stream' ? headerCt : sniffImageMimeType(buffer);
+        finalImageUrl = await fal.storage.upload(new Blob([buffer], { type: mime }));
+        console.log(`[Fal Video] Image proxied to Fal: ${finalImageUrl}`);
       }
     } catch (e) {
-      console.warn('Failed to presign S3 image URL for video generation:', e.message);
-      throw new Error('Cannot use this image for video generation because your local environment lacks AWS credentials to make the S3 image publicly accessible to Fal AI.');
+      console.warn('[Fal Video] Failed to proxy image to Fal storage:', e.message);
+    }
+  } else if (finalImageUrl && !finalImageUrl.startsWith('http')) {
+    try {
+      const localPath = finalImageUrl.startsWith('/') ? finalImageUrl : path.join(TMP_DIR, path.basename(finalImageUrl));
+      if (fs.existsSync(localPath)) {
+        const raw = fs.readFileSync(localPath);
+        const mime = mimeTypeFromFilePath(localPath) || sniffImageMimeType(raw);
+        finalImageUrl = await fal.storage.upload(new Blob([raw], { type: mime }));
+      }
+    } catch (e) {
+      console.warn('[Fal Video] Failed to upload local image:', e.message);
     }
   }
 
+  const hasPublicImage = finalImageUrl?.startsWith('http');
   const useI2V = hasPublicImage && modelDef.supportsI2V;
+  if (modelDef.supportsI2V && !useI2V) {
+    throw new Error('This video model requires a reference image URL for image-to-video.');
+  }
   const endpoint = useI2V ? (modelDef.i2vEndpoint || modelDef.id) : modelDef.id;
 
-  // Normalize aspect ratio
-  const arMap = { 'portrait_16_9': '9:16', 'landscape_16_9': '16:9', 'square': '1:1' };
+  const arMap = { portrait_16_9: '9:16', landscape_16_9: '16:9', square: '1:1' };
   const inputAR = options.aspect_ratio || modelDef.arValue || '9:16';
-  const aspectRatio = arMap[inputAR] || inputAR;
+  let aspectRatio = arMap[inputAR] || inputAR;
 
   const resolution = options.resolution || '720p';
+
   const negativePrompt = options.negative_prompt || '';
   const cfgScale = options.cfg_scale !== undefined ? options.cfg_scale : 0.5;
   const shouldGenAudio = options.generate_audio !== undefined ? options.generate_audio : modelDef.hasAudio;
 
-  console.log(`[Fal Video Debug] model=${modelId} endpoint=${endpoint} ar=${aspectRatio} i2v=${useI2V}`);
-
-  let input;
-  if (modelDef.inputSchema === 'minimax') {
-    // Minimax only accepts prompt (+ optional prompt_optimizer)
-    input = useI2V
-      ? { prompt: finalPrompt, image_url: finalImageUrl }
-      : { prompt: finalPrompt };
-  } else if (modelDef.inputSchema === 'kling') {
-    // Kling duration is "5" or "10" (no 's' suffix)
-    const base = { 
-      prompt: finalPrompt, 
-      duration: klingDurationStr, 
-      cfg_scale: cfgScale,
-      aspect_ratio: aspectRatio,
-      negative_prompt: negativePrompt,
-      generate_audio: shouldGenAudio
-    };
-    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
-  } else if (modelDef.inputSchema === 'wan') {
-    // WAN 2.1 I2V — no duration field, uses aspect_ratio + resolution
-    const base = { 
-      prompt: finalPrompt, 
-      aspect_ratio: aspectRatio, 
-      resolution: resolution,
-      negative_prompt: negativePrompt
-    };
-    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
-  } else if (modelDef.inputSchema === 'veo') {
-    // Veo 3.1 — duration as "Xs", aspect_ratio, resolution, generate_audio
-    const base = { 
-      prompt: finalPrompt, 
-      aspect_ratio: aspectRatio, 
-      duration: durationStr, 
-      resolution: resolution,
-      negative_prompt: negativePrompt,
-      generate_audio: shouldGenAudio
-    };
-    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
-  } else {
-    // Default: Luma Ray2, Hunyuan — duration as "Xs", aspect_ratio, resolution
-    const base = { 
-      prompt: finalPrompt, 
-      aspect_ratio: aspectRatio, 
-      duration: durationStr, 
-      resolution: resolution,
-      negative_prompt: negativePrompt,
-      generate_audio: shouldGenAudio
-    };
-    input = useI2V ? { ...base, image_url: finalImageUrl } : base;
+  if (modelDef.videoInputKind === 'veo' && useI2V && finalImageUrl?.startsWith('http')) {
+    try {
+      const ir = await fetch(finalImageUrl);
+      if (ir.ok) {
+        const buf = await ir.arrayBuffer();
+        assertVeoI2vImagePreflight(buf);
+        if (options.veo_aspect_auto === true) {
+          const dim = probeImageDimensions(buf);
+          if (dim && dim.width > 0 && dim.height > 0) {
+            const r = dim.width / dim.height;
+            if (Math.abs(r - 9 / 16) < 0.04) aspectRatio = '9:16';
+            else if (Math.abs(r - 16 / 9) < 0.04) aspectRatio = '16:9';
+            else aspectRatio = 'auto';
+          }
+        }
+      }
+    } catch (e) {
+      if (e.message?.includes('Input image') || e.message?.includes('exceeds')) throw e;
+      console.warn('[Fal Video] Veo image preflight skipped:', e.message);
+    }
   }
 
-  console.log(`[fal video] endpoint=${endpoint} i2v=${useI2V} dur=${durationStr} schema=${modelDef.inputSchema||'default'}`);
+  console.log(`[Fal Video Debug] model=${modelDef.id} endpoint=${endpoint} ar=${aspectRatio} i2v=${useI2V}`);
+
+  const input = buildFalVideoInput(modelDef, {
+    finalPrompt,
+    finalImageUrl,
+    useI2V,
+    endpoint,
+    aspectRatio,
+    resolution,
+    negativePrompt,
+    cfgScale,
+    shouldGenAudio,
+    snappedDur,
+    options: { ...options, cfg_scale: cfgScale },
+  });
+
+  console.log(`[Fal Video Debug] Final Input:`, JSON.stringify(input, null, 2));
   const result = await fal.subscribe(endpoint, { input, logs: false });
   const falUrl = result.data?.video?.url;
   if (!falUrl) throw new Error(`No video returned from fal (endpoint: ${endpoint})`);
@@ -978,24 +1034,45 @@ app.post('/api/auto-run', authenticate, async (req, res) => {
       } else {
         sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'generating' });
         try {
-          await withRetry(async () => {
-            const videoUrl = await generateFalVideo(
-              sceneResults[i].videoPrompt,
-              sceneResults[i].imageUrl,
-              sceneResults[i].duration,
-              `sessions/${sessionId || 'temp'}/videos`,
-              { dialogue: sceneResults[i].dialogue, modelId: videoModelId || DEFAULT_VIDEO_MODEL_ID }
-            );
-            const genId = Math.random().toString(36).substr(2, 9);
-            const generation = { id: genId, videoUrl, createdAt: Date.now(), isFinal: true };
-            sceneResults[i].videoGenerations = [...(sceneResults[i].videoGenerations || []), generation];
-            sceneResults[i].videoUrl = videoUrl;
-            sceneResults[i].status = 'video_done';
-            await saveProgress();
-            sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl, generationId: genId } });
-          }, 3, 5000);
+          await withRetry(
+            async () => {
+              const sr = sceneResults[i];
+              const videoUrl = await generateFalVideo(
+                sr.videoPrompt,
+                sr.imageUrl,
+                sr.duration,
+                `sessions/${sessionId || 'temp'}/videos`,
+                {
+                  dialogue: sr.dialogue,
+                  modelId: videoModelId || DEFAULT_VIDEO_MODEL_ID,
+                  aspect_ratio: sr.aspectRatio || sr.aspect_ratio || '9:16',
+                  resolution: sr.resolution || '720p',
+                  generate_audio: sr.generate_audio,
+                  negative_prompt: sr.negative_prompt,
+                  cfg_scale: sr.cfg_scale,
+                }
+              );
+              const genId = Math.random().toString(36).substr(2, 9);
+              const generation = { id: genId, videoUrl, createdAt: Date.now(), isFinal: true };
+              sceneResults[i].videoGenerations = [...(sceneResults[i].videoGenerations || []), generation];
+              sceneResults[i].videoUrl = videoUrl;
+              sceneResults[i].status = 'video_done';
+              await saveProgress();
+              sendEvent({ type: 'scene_progress', sceneId, stage: 'video', status: 'done', data: { videoUrl, generationId: genId } });
+            },
+            3,
+            5000,
+            (e) => !isNoMediaGeneratedError(e)
+          );
         } catch (e) {
-          sendEvent({ type: 'error', sceneId, stage: 'video', message: `Failed after retries: ${e.message}` });
+          const fal = serializeFalError(e);
+          sendEvent({
+            type: 'error',
+            sceneId,
+            stage: 'video',
+            message: `Failed after retries: ${fal.falMsg || fal.error}`,
+            data: fal,
+          });
           continue;
         }
       }

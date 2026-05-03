@@ -1,4 +1,4 @@
-// Mirrors backend/models.js — single source of truth for UI
+// Mirrors backend/models.js — keep ids aligned for API calls
 export const FAL_IMAGE_MODELS = [
   {
     id: 'fal-ai/flux/dev',
@@ -44,19 +44,18 @@ export const FAL_IMAGE_MODELS = [
     tags: ['typography'],
     recommended: false,
     speed: 'medium',
-  }
+  },
 ];
 
 export const FAL_VIDEO_MODELS = [
-  // ─── TIER 1: THE GIANTS ───
   {
     id: 'fal-ai/sora-2/text-to-video/pro',
     label: 'Sora 2 Pro',
     sublabel: 'OpenAI · Ultra-High Fidelity',
     supportsI2V: true,
-    allowedDurations: [10, 15, 25],
+    allowedDurations: [4, 8, 12, 16, 20],
     hasAudio: true,
-    maxDuration: 25,
+    maxDuration: 20,
     recommended: true,
     speed: 'slow',
   },
@@ -94,18 +93,17 @@ export const FAL_VIDEO_MODELS = [
     speed: 'fast',
   },
   {
-    id: 'fal-ai/veo-2',
+    id: 'fal-ai/veo2',
     label: 'Veo 2 (Classic)',
     sublabel: 'Google · Legacy Video Generation',
-    supportsI2V: false,
-    allowedDurations: [5, 10],
+    supportsI2V: true,
+    allowedDurations: [5, 6, 7, 8],
     hasAudio: false,
-    maxDuration: 10,
+    maxDuration: 8,
     recommended: false,
     speed: 'medium',
   },
 
-  // ─── TIER 2: SPECIALIZED & FAST ───
   {
     id: 'fal-ai/minimax/hailuo-2.3/pro/text-to-video',
     label: 'Hailuo 2.3 Pro',
@@ -123,8 +121,8 @@ export const FAL_VIDEO_MODELS = [
     sublabel: 'ByteDance · Realistic Physics',
     supportsI2V: true,
     allowedDurations: [5, 10],
-    hasAudio: false,
-    maxDuration: 10,
+    hasAudio: true,
+    maxDuration: 15,
     recommended: false,
     speed: 'fast',
   },
@@ -135,12 +133,11 @@ export const FAL_VIDEO_MODELS = [
     supportsI2V: true,
     allowedDurations: [5, 10],
     hasAudio: true,
-    maxDuration: 10,
+    maxDuration: 15,
     recommended: false,
     speed: 'medium',
   },
 
-  // ─── TIER 3: OPEN SOURCE & STABLE ───
   {
     id: 'fal-ai/luma-dream-machine/ray-2',
     label: 'Luma Ray 2',
@@ -184,7 +181,7 @@ export const FAL_VIDEO_MODELS = [
     maxDuration: 10,
     recommended: false,
     speed: 'medium',
-  }
+  },
 ];
 
 export const DEFAULT_IMAGE_MODEL_ID = FAL_IMAGE_MODELS[0].id;

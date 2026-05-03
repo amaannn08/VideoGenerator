@@ -1,7 +1,13 @@
 export const MODELS = {
-  // Text & Prompt Generation (unchanged)
   TEXT_MODEL: 'deepseek-chat',
 };
+
+export function findVideoModel(modelId) {
+  return (
+    FAL_VIDEO_MODELS.find((m) => m.id === modelId || m.legacyIds?.includes(modelId)) ||
+    FAL_VIDEO_MODELS[0]
+  );
+}
 
 // ─── fal.ai Image Model Registry ─────────────────────────────────────────────
 export const FAL_IMAGE_MODELS = [
@@ -15,19 +21,20 @@ export const FAL_IMAGE_MODELS = [
     recommended: true,
     speed: 'fast',
     arParam: 'image_size',
-    arValue: 'portrait_16_9'
+    arValue: 'portrait_16_9',
   },
   {
     id: 'fal-ai/nano-banana-2',
     label: 'Nano Banana 2',
     sublabel: 'Fast Text-to-Image',
     supportsRef: false,
-    editEndpoint: null,
+    editEndpoint: 'fal-ai/nano-banana-2/edit',
+    editImageField: 'image_urls',
     tags: ['fast'],
     recommended: false,
     speed: 'fast',
     arParam: 'aspect_ratio',
-    arValue: '9:16'
+    arValue: '9:16',
   },
   {
     id: 'fal-ai/flux-pro/v1.1',
@@ -39,7 +46,7 @@ export const FAL_IMAGE_MODELS = [
     recommended: false,
     speed: 'medium',
     arParam: 'image_size',
-    arValue: 'portrait_16_9'
+    arValue: 'portrait_16_9',
   },
   {
     id: 'fal-ai/flux-pro/v1.1-ultra',
@@ -50,8 +57,8 @@ export const FAL_IMAGE_MODELS = [
     tags: ['2K', 'cinematic'],
     recommended: false,
     speed: 'medium',
-    arParam: 'aspect_ratio', // Ultra takes aspect_ratio
-    arValue: '9:16'
+    arParam: 'aspect_ratio',
+    arValue: '9:16',
   },
   {
     id: 'fal-ai/recraft-v3',
@@ -63,23 +70,25 @@ export const FAL_IMAGE_MODELS = [
     recommended: false,
     speed: 'medium',
     arParam: 'image_size',
-    arValue: 'portrait_16_9'
-  }
+    arValue: 'portrait_16_9',
+    defaultStyle: 'realistic_image',
+  },
 ];
 
 // ─── fal.ai Video Model Registry ─────────────────────────────────────────────
 export const FAL_VIDEO_MODELS = [
-  // ─── TIER 1: THE GIANTS (2026 TOP END) ───
   {
     id: 'fal-ai/sora-2/text-to-video/pro',
     label: 'Sora 2 Pro',
     sublabel: 'OpenAI · Ultra-High Fidelity',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/sora-2/image-to-video/pro',
-    inputSchema: 'kling',
-    allowedDurations: [10, 15, 25],
+    videoInputKind: 'sora',
+    allowedDurations: [4, 8, 12, 16, 20],
+    allowedDurationsT2v: [4, 8, 12, 16, 20],
+    allowedDurationsI2v: [4, 8, 12, 16, 20],
     hasAudio: true,
-    maxDuration: 25,
+    maxDuration: 20,
     recommended: true,
     speed: 'slow',
   },
@@ -89,8 +98,9 @@ export const FAL_VIDEO_MODELS = [
     sublabel: 'Kuaishou · Cinematic Masterpiece',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/kling-video/v3/pro/image-to-video',
-    inputSchema: 'kling',
+    videoInputKind: 'kling-v3',
     allowedDurations: [5, 10, 20],
+    allowedDurationsI2v: [5, 10],
     hasAudio: true,
     maxDuration: 20,
     recommended: false,
@@ -101,8 +111,9 @@ export const FAL_VIDEO_MODELS = [
     label: 'Veo 3.1 Pro',
     sublabel: 'Google · Highest Quality + Native Audio',
     supportsI2V: false,
-    inputSchema: 'veo',
+    videoInputKind: 'veo',
     allowedDurations: [4, 6, 8, 12],
+    veo1080pRequires8s: true,
     hasAudio: true,
     maxDuration: 12,
     recommended: false,
@@ -114,34 +125,36 @@ export const FAL_VIDEO_MODELS = [
     sublabel: 'Google · Fast Preview + Native Audio',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/veo3.1/lite/image-to-video',
-    inputSchema: 'veo',
+    videoInputKind: 'veo',
     allowedDurations: [4, 6, 8],
+    veo1080pRequires8s: true,
     hasAudio: true,
     maxDuration: 8,
     recommended: false,
     speed: 'fast',
   },
   {
-    id: 'fal-ai/veo-2',
+    id: 'fal-ai/veo2',
     label: 'Veo 2 (Classic)',
     sublabel: 'Google · Legacy Video Generation',
-    supportsI2V: false,
-    inputSchema: 'veo',
-    allowedDurations: [5, 10],
+    legacyIds: ['fal-ai/veo-2'],
+    supportsI2V: true,
+    i2vEndpoint: 'fal-ai/veo2/image-to-video',
+    videoInputKind: 'veo2',
+    allowedDurations: [5, 6, 7, 8],
     hasAudio: false,
-    maxDuration: 10,
+    maxDuration: 8,
     recommended: false,
     speed: 'medium',
   },
 
-  // ─── TIER 2: SPECIALIZED & FAST ───
   {
     id: 'fal-ai/minimax/hailuo-2.3/pro/text-to-video',
     label: 'Hailuo 2.3 Pro',
     sublabel: 'MiniMax · Photorealistic',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/minimax/hailuo-2.3/pro/image-to-video',
-    inputSchema: 'minimax',
+    videoInputKind: 'minimax',
     allowedDurations: [6, 10],
     hasAudio: false,
     maxDuration: 10,
@@ -154,10 +167,10 @@ export const FAL_VIDEO_MODELS = [
     sublabel: 'ByteDance · Realistic Physics',
     supportsI2V: true,
     i2vEndpoint: 'bytedance/seedance-2.0/image-to-video',
-    inputSchema: 'wan',
+    videoInputKind: 'seedance',
     allowedDurations: [5, 10],
-    hasAudio: false,
-    maxDuration: 10,
+    hasAudio: true,
+    maxDuration: 15,
     recommended: false,
     speed: 'fast',
   },
@@ -167,22 +180,21 @@ export const FAL_VIDEO_MODELS = [
     sublabel: 'Alibaba · 1080p + Audio',
     supportsI2V: true,
     i2vEndpoint: 'alibaba/happy-horse/image-to-video',
-    inputSchema: 'wan',
+    videoInputKind: 'happy-horse',
     allowedDurations: [5, 10],
     hasAudio: true,
-    maxDuration: 10,
+    maxDuration: 15,
     recommended: false,
     speed: 'medium',
   },
 
-  // ─── TIER 3: OPEN SOURCE & STABLE ───
   {
     id: 'fal-ai/luma-dream-machine/ray-2',
     label: 'Luma Ray 2',
     sublabel: 'Luma · Versatile T2V/I2V',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/luma-dream-machine/ray-2/image-to-video',
-    inputSchema: 'luma',
+    videoInputKind: 'luma-ray2',
     allowedDurations: [5, 9],
     hasAudio: false,
     maxDuration: 9,
@@ -195,7 +207,7 @@ export const FAL_VIDEO_MODELS = [
     sublabel: 'Alibaba · Reliable Open Model',
     supportsI2V: true,
     i2vEndpoint: 'fal-ai/wan-i2v',
-    inputSchema: 'wan',
+    videoInputKind: 'wan-i2v',
     allowedDurations: [6],
     hasAudio: false,
     maxDuration: 6,
@@ -207,7 +219,7 @@ export const FAL_VIDEO_MODELS = [
     label: 'Mochi 1',
     sublabel: 'Genmo · High Fidelity Motion',
     supportsI2V: false,
-    inputSchema: 'luma',
+    videoInputKind: 'mochi',
     allowedDurations: [5, 10],
     hasAudio: false,
     maxDuration: 10,
@@ -219,13 +231,13 @@ export const FAL_VIDEO_MODELS = [
     label: 'Hunyuan Video',
     sublabel: 'Tencent · Large Scale Open',
     supportsI2V: false,
-    inputSchema: 'luma',
+    videoInputKind: 'hunyuan',
     allowedDurations: [5, 10],
     hasAudio: false,
     maxDuration: 10,
     recommended: false,
     speed: 'medium',
-  }
+  },
 ];
 
 export const DEFAULT_IMAGE_MODEL_ID = FAL_IMAGE_MODELS[0].id;

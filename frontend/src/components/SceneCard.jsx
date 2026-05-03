@@ -204,7 +204,11 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         signal: signal() 
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      if (!r.ok) {
+        const msg = d.falMsg || d.error || 'Image generation failed';
+        const extra = d.falType ? ` [${d.falType}]` : '';
+        throw new Error(`${msg}${extra}`);
+      }
       const genId = Math.random().toString(36).substr(2, 9);
       const generation = { id: genId, imageUrl: d.imageUrl, createdAt: Date.now(), isFinal: true };
       const prevGens = (scene.imageGenerations || []).map(g => ({ ...g, isFinal: false }));
@@ -253,7 +257,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         signal: signal(),
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      if (!r.ok) throw new Error(d.falMsg || d.error || 'Video prompt failed');
       updateScene(scene.id, { videoPrompt: d.videoPrompt, duration: d.duration || scene.duration, status: 'video_prompt_ready' });
     } catch (e) { if (e.name !== 'AbortError') { alert(e.message); updateScene(scene.id, { status: 'image_done' }); } }
   };
@@ -282,7 +286,12 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         signal: signal(),
       });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      if (!r.ok) {
+        const msg = d.falMsg || d.error || 'Video generation failed';
+        const extra = d.falType ? ` [${d.falType}]` : '';
+        const link = d.falDetailUrl ? `\n${d.falDetailUrl}` : '';
+        throw new Error(`${msg}${extra}${link}`);
+      }
       const genId = Math.random().toString(36).substr(2, 9);
       const generation = { id: genId, videoUrl: d.videoUrl, createdAt: Date.now(), isFinal: true };
       // Mark all existing generations as not final, then add new one as final

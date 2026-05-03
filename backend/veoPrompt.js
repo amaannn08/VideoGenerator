@@ -20,18 +20,57 @@ export function parseVideoPromptBlocks(videoPrompt) {
   return blocks;
 }
 
+function spokenLanguagePrefix(dlg) {
+  const lang = (dlg.language || '').trim();
+  if (!lang || /^english$/i.test(lang)) return '';
+  return `The voice performance must be in ${lang} only — do not translate or dub into English. Natural native pronunciation and intonation. `;
+}
+
+/** Prefer script + roman guide for non-English when both exist (helps native-audio models). */
+function dialogueQuotedLine(dlg) {
+  const raw = (dlg.text || '').trim();
+  const phon = (dlg.phonetic || '').trim();
+  const lang = (dlg.language || '').trim();
+  const nonEnglish = lang && !/^english$/i.test(lang);
+
+  if (!raw && !phon) return null;
+  if (nonEnglish && raw && phon && phon !== raw) {
+    return `${raw} — romanized ${lang}: ${phon}`;
+  }
+  if (phon) return phon;
+  return raw;
+}
+
+/**
+ * Parses the labeled DIALOGUE block when structured dialogue JSON is missing.
+ * Expected shape: `"script" | phonetic: "..." | mode: ...` or `None.`
+ */
+export function extractDialogueFromLabeledBlock(dialogueBlockVal) {
+  if (!dialogueBlockVal || typeof dialogueBlockVal !== 'string') return null;
+  const s = dialogueBlockVal.trim();
+  if (!s || /^none\.?$/i.test(s)) return null;
+  const main = /^\s*"((?:\\.|[^"\\])*)"/.exec(s);
+  if (!main) return null;
+  const text = main[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  const phonM = /\|\s*phonetic:\s*"((?:\\.|[^"\\])*)"/i.exec(s);
+  const phonetic = phonM ? phonM[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\') : '';
+  return { text, phonetic: phonetic || undefined };
+}
+
 export function buildVeoDialogueLine(dialogue) {
   const dlg = dialogue || {};
-  const raw = (dlg.text || '').trim();
-  if (!raw) return null;
-  const text = (dlg.phonetic || '').trim() || raw;
+  const text = dialogueQuotedLine(dlg);
+  if (!text) return null;
   const tone = dlg.tone || 'calm and deliberate';
   const pacing = dlg.pacing || 'slow with natural pauses';
   const mode = dlg.mode === 'narration' ? 'narration' : 'character';
+  const langLead = spokenLanguagePrefix(dlg);
+  const verbatim =
+    'Exact scripted wording only — reproduce the quoted text word-for-word in the same order with no paraphrase, synonym substitution, translation to another language, summary, extra sentences, or improvised dialogue. ';
   if (mode === 'narration') {
-    return `Voice-over narration, ${tone} delivery, ${pacing}: "${text}"`;
+    return `${langLead}${verbatim}Voice-over narration, ${tone} delivery, ${pacing}: "${text}"`;
   }
-  return `The character speaks in a ${tone} voice, ${pacing}: "${text}"`;
+  return `${langLead}${verbatim}The character speaks in a ${tone} voice, ${pacing}: "${text}"`;
 }
 
 export function assembleVeoPrompt(blocks, dialogue) {
@@ -52,9 +91,16 @@ export function assembleVeoPrompt(blocks, dialogue) {
     parts.push(actionStart);
   }
 
-  const dialogueLine = buildVeoDialogueLine(dialogue);
+  const dlgResolved =
+    dialogue && ((dialogue.text || '').trim() || (dialogue.phonetic || '').trim())
+      ? dialogue
+      : extractDialogueFromLabeledBlock(blocks.DIALOGUE);
+  const dialogueLine = buildVeoDialogueLine(dlgResolved);
   if (dialogueLine) {
     parts.push(`Sound and audio: ${dialogueLine}`);
+    parts.push(
+      'Treat the quoted dialogue as the sole authorized spoken script for this clip. Ignore any other suggested lines elsewhere in the prompt (action descriptions, characterization). Audible speech must match it exactly — same words, same order; ambient sound and music only as background, never replacing or rewriting the line.'
+    );
   }
 
   if (camera) parts.push(`Cinematography: The camera ${camera}`);

@@ -243,12 +243,14 @@ function getVideoPromptGenerationPrompt(scene, character, sceneIndex, totalScene
   const dialogueMode = dlg.mode === 'narration' ? 'narration' : 'character';
 
   const dialogueBlock = hasDialogue
-    ? `DIALOGUE: "${dialogueText}" | phonetic: "${dialoguePhonetic}" | mode: ${dialogueMode} | tone: ${dialogueTone} | pacing: ${dialoguePacing}. The spoken words are fixed — do NOT alter, add to, or replace this line.`
+    ? `DIALOGUE: "${dialogueText}" | phonetic: "${dialoguePhonetic}" | mode: ${dialogueMode} | tone: ${dialogueTone} | pacing: ${dialoguePacing}. The spoken words are sacred — copy them character-for-character into your videoPrompt DIALOGUE block and never paraphrase, shorten, translate, or substitute synonyms. The generated video audio must speak only this exact line.`
     : `DIALOGUE: None. Character remains silent. Convey all emotion through facial micro-expressions and body language only.`;
 
   return `You are a cinematic video prompt engineer for AI video generators (Veo 3, Kling, Runway, Pika). You produce prompts for 9:16 portrait short-form clips.
 
 I have attached a reference image of the character. This image is the visual ground truth — the generated video MUST match it exactly.
+
+IMAGE-TO-VIDEO: The clip is animated from that single reference frame. ACTION_START and ACTION_END must describe motion, gaze, and hand/face changes that are physically plausible **from what is already visible in the frame** — do not invent a wider staging (e.g. full-body walking across a beach) if the reference is an extreme close-up. Keep CAMERA consistent with the reference scale (close-up stays close-up). Background motion stays minimal and secondary.
 
 ⚠️ CONTENT POLICY — MANDATORY:
 - NEVER use any real person's name, historical figure's name, or celebrity name.
@@ -275,6 +277,7 @@ Transition Into: ${scene.transitionTo || 'Final scene'}
 Your output is a structured video generation prompt using LABELED BLOCKS.
 Each block is a discrete, self-contained instruction. Do NOT write flowing prose.
 The video model reads each block separately and applies it literally.
+If this scene has spoken dialogue above, the DIALOGUE block in videoPrompt must repeat that exact spoken text word-for-word — no creative rewriting.
 
 OUTPUT FORMAT — produce EXACTLY this structure, filling each block:
 
