@@ -240,5 +240,5 @@ export const FAL_VIDEO_MODELS = [
   },
 ];
 
-export const DEFAULT_IMAGE_MODEL_ID = FAL_IMAGE_MODELS[0].id;
-export const DEFAULT_VIDEO_MODEL_ID = FAL_VIDEO_MODELS[0].id;
+export const DEFAULT_IMAGE_MODEL_ID = 'fal-ai/nano-banana-2';
+export const DEFAULT_VIDEO_MODEL_ID = 'fal-ai/veo3.1/lite';
