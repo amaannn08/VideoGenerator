@@ -612,15 +612,20 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
 
             {hasImgP && (
               <>
-                <div className="mt-auto">
-                  <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Image Model</label>
+                <div className="mt-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Image Model</label>
+                    {localImageModelId !== imageModelId && (
+                      <button onClick={() => setLocalImageModelId(imageModelId)} className="text-[10px] text-indigo-400 hover:text-indigo-600 font-semibold">Reset to default</button>
+                    )}
+                  </div>
                   <select
                     value={localImageModelId}
                     onChange={e => setLocalImageModelId(e.target.value)}
                     className="w-full text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white"
                   >
                     {FAL_IMAGE_MODELS.map(m => (
-                      <option key={m.id} value={m.id}>{m.label}</option>
+                      <option key={m.id} value={m.id}>{m.label}{m.id === imageModelId ? ' (Default)' : ''}</option>
                     ))}
                   </select>
                 </div>
@@ -833,14 +838,19 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                   {hasVidP && (
                     <>
                       <div className="mt-2">
-                        <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Video Model</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">Video Model</label>
+                          {localVideoModelId !== videoModelId && (
+                            <button onClick={() => setLocalVideoModelId(videoModelId)} className="text-[10px] text-indigo-400 hover:text-indigo-600 font-semibold">Reset to default</button>
+                          )}
+                        </div>
                         <select
                           value={localVideoModelId}
                           onChange={e => setLocalVideoModelId(e.target.value)}
                           className="w-full text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white"
                         >
                           {FAL_VIDEO_MODELS.map(m => (
-                            <option key={m.id} value={m.id}>{m.label}</option>
+                            <option key={m.id} value={m.id}>{m.label}{m.id === videoModelId ? ' (Default)' : ''}</option>
                           ))}
                         </select>
                       </div>
