@@ -3,7 +3,7 @@
  */
 
 const VEO_LITE_I2V_MAX_BYTES = 8 * 1024 * 1024;
-const VEO_MIN_SHORT_SIDE = 720;
+const VEO_MIN_SHORT_SIDE = 576;
 
 /** @param {unknown} err */
 export function extractFalErrorDetailTypes(err) {
