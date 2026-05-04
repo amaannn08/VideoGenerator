@@ -1,6 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
 import fs from 'fs';
 import path from 'path';
+import fetch from 'node-fetch';
 import { uploadToS3 } from './s3.js';
 
 const TMP_DIR = '/tmp/ai-video-gen';
@@ -46,7 +47,15 @@ export async function generateVeoVertexVideo(
   };
 
   if (imageUrl) {
-    request.image = { uri: imageUrl };
+    // Vertex AI requires base64 imageBytes — fetch the image and convert
+    const imgRes = await fetch(imageUrl);
+    if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.status}`);
+    const imgBuffer = await imgRes.buffer();
+    const mimeType = imgRes.headers.get('content-type') || 'image/jpeg';
+    request.image = {
+      imageBytes: imgBuffer.toString('base64'),
+      mimeType,
+    };
   }
 
   console.log(`[Vertex Video] Starting generation: model=veo-3.1-generate-001 duration=${duration}s`);
