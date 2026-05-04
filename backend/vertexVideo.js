@@ -10,13 +10,6 @@ const POLL_INTERVAL_MS = 10_000;
 
 /**
  * Generates a video via Google Vertex AI (Veo 3.1) and returns a presigned S3 URL.
- *
- * @param {string} prompt - Video generation prompt
- * @param {string|null} imageUrl - Optional reference image URL for I2V (S3 presigned URL)
- * @param {number} duration - Duration in seconds (5 or 8)
- * @param {string} s3Prefix - S3 key prefix (default: 'videos')
- * @param {object} options - Reserved for future use
- * @returns {Promise<string>} Presigned S3 URL for the generated video
  */
 export async function generateVeoVertexVideo(
   prompt,
@@ -36,99 +29,79 @@ export async function generateVeoVertexVideo(
 
   const ai = new GoogleGenAI({ vertexai: true, project, location });
 
-  // Build request — top-level prompt/image, config nested
-  const params = {
-    model: 'veo-3.1-generate-001',
-    prompt,
-    config: {
-      durationSeconds: duration,
-      numberOfVideos: 1,
-    },
-  };
+  // Vertex uses source: { prompt, image? } — not top-level prompt
+  const source = { prompt };
 
   if (imageUrl) {
-    // Vertex AI requires base64 imageBytes — fetch the S3 image and convert
+    // Fetch S3 image and convert to base64 imageBytes
     const imgRes = await fetch(imageUrl);
     if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.status}`);
     const imgBuffer = await imgRes.buffer();
     const mimeType = (imgRes.headers.get('content-type') || 'image/jpeg').split(';')[0];
-    params.image = {
+    source.image = {
       imageBytes: imgBuffer.toString('base64'),
       mimeType,
     };
   }
 
-  console.log(`[Vertex Video] Starting generation: model=veo-3.1-generate-001 duration=${duration}s i2v=${!!imageUrl}`);
+  const params = {
+    model: 'veo-3.1-generate-001',
+    source,
+    config: {
+      numberOfVideos: 1,
+      durationSeconds: duration,
+    },
+  };
+
+  console.log(`[Vertex Video] Starting: duration=${duration}s i2v=${!!imageUrl}`);
 
   let operation = await ai.models.generateVideos(params);
   console.log(`[Vertex Video] Operation started: ${operation.name}`);
 
   let localPath = null;
   try {
-    // Poll using the SDK's getVideosOperation — pass the whole operation object back
     for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
       await sleep(POLL_INTERVAL_MS);
-      operation = await ai.operations.getVideosOperation({ operation });
+      // Use ai.operations.get (not getVideosOperation) per official SDK samples
+      operation = await ai.operations.get({ operation });
 
       if (operation.done) {
-        console.log(`[Vertex Video] Operation response:`, JSON.stringify(operation.response, null, 2));
-        const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
-        if (!videoUri) {
-          // Try alternate response paths
-          const alt1 = operation.response?.videos?.[0]?.uri;
-          const alt2 = operation.response?.generatedSamples?.[0]?.video?.uri;
-          const alt3 = operation.response?.generatedSamples?.[0]?.video?.videoBytes;
-          console.log(`[Vertex Video] Alt paths: alt1=${alt1} alt2=${alt2} alt3=${!!alt3}`);
-          const resolvedUri = alt1 || alt2;
-          const resolvedBytes = alt3;
-          if (!resolvedUri && !resolvedBytes) {
-            throw new Error('Vertex AI returned a completed operation but no video URI was found');
-          }
-          if (resolvedBytes) {
-            // base64 path
-            if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-            const fileName = `vertex_video_${Date.now()}.mp4`;
-            localPath = path.join(TMP_DIR, fileName);
-            fs.writeFileSync(localPath, Buffer.from(resolvedBytes, 'base64'));
-            const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
-            return presignedUrl;
-          }
-          // download from URI
-          const videoRes = await fetch(resolvedUri, {
-            headers: { Authorization: `Bearer ${await getAccessToken()}` },
-          });
-          if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`);
-          const videoBuffer = await videoRes.buffer();
-          if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-          const fileName = `vertex_video_${Date.now()}.mp4`;
-          localPath = path.join(TMP_DIR, fileName);
-          fs.writeFileSync(localPath, videoBuffer);
-          const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
-          return presignedUrl;
+        const video = operation.response?.generatedVideos?.[0]?.video;
+        if (!video) {
+          throw new Error('Vertex AI returned a completed operation but no video was found');
         }
 
-        console.log(`[Vertex Video] Generation complete, downloading from GCS: ${videoUri}`);
-
-        // Download the video from GCS URI using authenticated fetch
-        const videoRes = await fetch(videoUri, {
-          headers: { Authorization: `Bearer ${await getAccessToken()}` },
-        });
-        if (!videoRes.ok) throw new Error(`Failed to download video from GCS: ${videoRes.status}`);
-        const videoBuffer = await videoRes.buffer();
-
-        // Write to temp file and upload to S3
         if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
         const fileName = `vertex_video_${Date.now()}.mp4`;
         localPath = path.join(TMP_DIR, fileName);
-        fs.writeFileSync(localPath, videoBuffer);
-        console.log(`[Vertex Video] Saved temp file: ${localPath}`);
+
+        if (video.videoBytes) {
+          // base64 inline bytes
+          fs.writeFileSync(localPath, Buffer.from(video.videoBytes, 'base64'));
+        } else if (video.uri) {
+          // GCS URI — download with auth
+          console.log(`[Vertex Video] Downloading from: ${video.uri}`);
+          const token = await getAccessToken();
+          const videoRes = await fetch(video.uri, {
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`);
+          const buf = await videoRes.buffer();
+          fs.writeFileSync(localPath, buf);
+        } else {
+          // Use SDK's files.download as fallback
+          await ai.files.download({
+            file: operation.response.generatedVideos[0],
+            downloadPath: localPath,
+          });
+        }
 
         const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
         console.log(`[Vertex Video] Uploaded to S3`);
         return presignedUrl;
       }
 
-      console.log(`[Vertex Video] Poll ${attempt + 1}/${POLL_ATTEMPTS}: still pending…`);
+      console.log(`[Vertex Video] Poll ${attempt + 1}/${POLL_ATTEMPTS}: pending…`);
     }
 
     throw new Error('Vertex AI video generation timed out after 600s');
