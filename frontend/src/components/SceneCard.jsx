@@ -1,6 +1,6 @@
 import React, { useState, useEffect, memo, useRef } from 'react';
 import { Plus, X, MapPin, Mic, Sparkles, Image as ImageIcon, Film, FileText, RefreshCw, Check, Smile, Trash2, ChevronDown, ChevronUp, History } from 'lucide-react';
-import { FAL_VIDEO_MODELS } from '../falModels';
+import { FAL_VIDEO_MODELS, FAL_IMAGE_MODELS } from '../falModels';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -67,7 +67,13 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   const [showImageGenerations, setShowImageGenerations] = useState(false);
   const [showAdvancedImg, setShowAdvancedImg] = useState(false);
   const [showAdvancedVid, setShowAdvancedVid] = useState(false);
+  const [localImageModelId, setLocalImageModelId] = useState(imageModelId);
+  const [localVideoModelId, setLocalVideoModelId] = useState(videoModelId);
   const abortRef = useRef(null);
+
+  // Keep local model ids in sync when global defaults change
+  useEffect(() => setLocalImageModelId(imageModelId), [imageModelId]);
+  useEffect(() => setLocalVideoModelId(videoModelId), [videoModelId]);
 
   useEffect(() => setLocalImg(scene.imagePrompt || ''), [scene.imagePrompt]);
   useEffect(() => setLocalVid(scene.videoPrompt || ''), [scene.videoPrompt]);
@@ -88,7 +94,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
   
   // Snap duration when video model changes to ensure it's always valid
   useEffect(() => {
-    const modelDef = FAL_VIDEO_MODELS.find(m => m.id === videoModelId);
+    const modelDef = FAL_VIDEO_MODELS.find(m => m.id === localVideoModelId);
     if (modelDef && modelDef.allowedDurations && !modelDef.allowedDurations.includes(localDuration)) {
       const snapped = modelDef.allowedDurations.reduce((prev, curr) => 
         Math.abs(curr - localDuration) < Math.abs(prev - localDuration) ? curr : prev
@@ -96,7 +102,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
       setLocalDuration(snapped);
       updateScene(scene.id, { duration: snapped });
     }
-  }, [videoModelId]);
+  }, [localVideoModelId]);
 
   const getAutoEnvironment = () => (
     (globalEnvironments || []).find(e =>
@@ -198,7 +204,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         body: JSON.stringify({ 
           imagePrompt: scene.imagePrompt, 
           referenceImage: previousSceneImage, 
-          modelId: imageModelId,
+          modelId: localImageModelId,
           options
         }), 
         signal: signal() 
@@ -272,7 +278,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         cfg_scale: localCfgScale,
         generate_audio: localGenAudio
       };
-      const sdk = FAL_VIDEO_MODELS.find(m => m.id === videoModelId)?.sdk ?? 'fal';
+      const sdk = FAL_VIDEO_MODELS.find(m => m.id === localVideoModelId)?.sdk ?? 'fal';
       const r = await authenticatedFetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -281,7 +287,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
           imageUrl: activeImageUrl, 
           duration: scene.duration, 
           dialogue: scene.dialogue, 
-          modelId: videoModelId,
+          modelId: localVideoModelId,
           sdk,
           options
         }),
@@ -371,7 +377,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                   cursor: 'pointer' 
                 }}
               >
-                {(FAL_VIDEO_MODELS.find(m => m.id === videoModelId)?.allowedDurations || [4, 6, 8]).map(d => (
+                {(FAL_VIDEO_MODELS.find(m => m.id === localVideoModelId)?.allowedDurations || [4, 6, 8]).map(d => (
                   <option key={d} value={d}>{d}s</option>
                 ))}
               </select>
@@ -604,8 +610,25 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
               )}
             </div>
 
-            {hasImgP && <Btn onClick={status === 'image_generating' ? handleStop : genImage} variant={status === 'image_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl mt-auto shrink-0">{status === 'image_generating' ? <><Spinner size={18} color="border-white" />Stop</> : imageGenerations.length > 0 ? 'Generate Another Attempt' : 'Generate Image'}</Btn>}
-          </div>
+            {hasImgP && (
+              <>
+                <div className="mt-auto">
+                  <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Image Model</label>
+                  <select
+                    value={localImageModelId}
+                    onChange={e => setLocalImageModelId(e.target.value)}
+                    className="w-full text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white"
+                  >
+                    {FAL_IMAGE_MODELS.map(m => (
+                      <option key={m.id} value={m.id}>{m.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <Btn onClick={status === 'image_generating' ? handleStop : genImage} variant={status === 'image_generating' ? 'danger' : 'primary'} className="w-full py-4 text-lg rounded-2xl shrink-0">
+                  {status === 'image_generating' ? <><Spinner size={18} color="border-white" />Stop</> : imageGenerations.length > 0 ? 'Generate Another Attempt' : 'Generate Image'}
+                </Btn>
+              </>
+            )}          </div>
           <div className="flex-1 flex flex-col min-w-[280px] min-h-0">
             {hasImg ? (
               <div className="flex-1 flex flex-col min-h-0">
@@ -808,13 +831,27 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
                   </div>
 
                   {hasVidP && (
-                    <Btn 
-                      onClick={status === 'video_generating' ? handleStop : genVideo} 
-                      variant={status === 'video_generating' ? 'danger' : 'primary'} 
-                      className="w-full py-4 text-lg rounded-2xl mt-4 shrink-0"
-                    >
-                      {status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : videoGenerations.length > 0 ? 'Generate Another Attempt' : `Generate Video`}
-                    </Btn>
+                    <>
+                      <div className="mt-2">
+                        <label className="text-[10px] font-black text-indigo-600 uppercase tracking-widest mb-1 block">Video Model</label>
+                        <select
+                          value={localVideoModelId}
+                          onChange={e => setLocalVideoModelId(e.target.value)}
+                          className="w-full text-xs border border-indigo-200 rounded-lg px-3 py-2 focus:ring-2 focus:ring-indigo-400 outline-none text-gray-900 bg-white"
+                        >
+                          {FAL_VIDEO_MODELS.map(m => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <Btn 
+                        onClick={status === 'video_generating' ? handleStop : genVideo} 
+                        variant={status === 'video_generating' ? 'danger' : 'primary'} 
+                        className="w-full py-4 text-lg rounded-2xl mt-4 shrink-0"
+                      >
+                        {status === 'video_generating' ? <><Spinner size={18} color="border-white" />Stop</> : videoGenerations.length > 0 ? 'Generate Another Attempt' : `Generate Video`}
+                      </Btn>
+                    </>
                   )}
 
                   {/* Generation History */}
