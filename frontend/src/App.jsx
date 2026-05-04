@@ -228,6 +228,8 @@ export default function App() {
       try {
         const body = JSON.stringify({ script, globalCharacter:activeCharacter, globalCharacters, primaryCharacterId, narrativeArc, scenes, mergedVideo, globalEnvironments, targetLanguage });
         if (!sessionIdRef.current) {
+          // Only create a new session once a script has been entered
+          if (!script.trim()) return;
           if (creatingSessionRef.current) return;
           creatingSessionRef.current = true;
           try {
