@@ -64,15 +64,21 @@ export default function App() {
       .finally(() => setAuthChecked(true));
   }, []);
 
-  const authenticatedFetch = useCallback((url, options = {}) => {
+  const authenticatedFetch = useCallback(async (url, options = {}) => {
     const token = localStorage.getItem('ai-video-token');
-    return fetch(url, {
+    const res = await fetch(url, {
       ...options,
       headers: {
         ...options.headers,
         'x-auth-token': token,
       },
     });
+    if (res.status === 401) {
+      localStorage.removeItem('ai-video-token');
+      localStorage.removeItem('ai-video-token-exp');
+      setAuthToken(null);
+    }
+    return res;
   }, []);
 
   const applySessionId = useCallback((sid) => {
