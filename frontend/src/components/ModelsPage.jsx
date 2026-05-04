@@ -101,6 +101,18 @@ function ModelCard({ model, isSelected, onSelect, type }) {
         </p>
       </div>
 
+      {/* SDK Badge */}
+      {type === 'video' && (
+        <div style={{ marginBottom: -4 }}>
+          {model.sdk === 'vertex' && (
+            <span style={{ color: '#4285F4', fontSize: 10, fontWeight: 600 }}>Vertex AI</span>
+          )}
+          {(!model.sdk || model.sdk === 'fal') && (
+            <span style={{ color: '#a78bfa', fontSize: 10, fontWeight: 600 }}>fal.ai</span>
+          )}
+        </div>
+      )}
+
       {/* Capabilities */}
       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
         <SpeedBadge speed={model.speed} />
@@ -218,7 +230,10 @@ export default function ModelsPage({ imageModelId, videoModelId, onImageModelCha
               Used for animating scenes — image-to-video when a frame is available
             </p>
           </div>
-          <div style={{ marginLeft: 'auto' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+            {FAL_VIDEO_MODELS.find(m => m.id === videoModelId)?.sdk === 'vertex' && (
+              <span style={{ color: '#4285F4', fontSize: 10, fontWeight: 600 }}>Vertex AI</span>
+            )}
             <span style={{
               fontSize: 11, color: 'var(--amber)', fontWeight: 600,
               background: 'var(--amber-glow)', padding: '4px 10px', borderRadius: 8,
