@@ -73,19 +73,6 @@ export const FAL_IMAGE_MODELS = [
     arValue: 'portrait_16_9',
     defaultStyle: 'realistic_image',
   },
-  {
-    id: 'vertex-imagen4',
-    label: 'Imagen 4 (Vertex AI)',
-    sublabel: 'Google Vertex AI · Photorealistic Image Generation',
-    sdk: 'vertex',
-    supportsRef: false,
-    editEndpoint: null,
-    tags: ['photorealistic'],
-    recommended: false,
-    speed: 'medium',
-    arParam: 'aspect_ratio',
-    arValue: '9:16',
-  },
 ];
 
 // ─── fal.ai Video Model Registry ─────────────────────────────────────────────
