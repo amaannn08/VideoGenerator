@@ -71,9 +71,40 @@ export async function generateVeoVertexVideo(
       operation = await ai.operations.getVideosOperation({ operation });
 
       if (operation.done) {
+        console.log(`[Vertex Video] Operation response:`, JSON.stringify(operation.response, null, 2));
         const videoUri = operation.response?.generatedVideos?.[0]?.video?.uri;
         if (!videoUri) {
-          throw new Error('Vertex AI returned a completed operation but no video URI was found');
+          // Try alternate response paths
+          const alt1 = operation.response?.videos?.[0]?.uri;
+          const alt2 = operation.response?.generatedSamples?.[0]?.video?.uri;
+          const alt3 = operation.response?.generatedSamples?.[0]?.video?.videoBytes;
+          console.log(`[Vertex Video] Alt paths: alt1=${alt1} alt2=${alt2} alt3=${!!alt3}`);
+          const resolvedUri = alt1 || alt2;
+          const resolvedBytes = alt3;
+          if (!resolvedUri && !resolvedBytes) {
+            throw new Error('Vertex AI returned a completed operation but no video URI was found');
+          }
+          if (resolvedBytes) {
+            // base64 path
+            if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
+            const fileName = `vertex_video_${Date.now()}.mp4`;
+            localPath = path.join(TMP_DIR, fileName);
+            fs.writeFileSync(localPath, Buffer.from(resolvedBytes, 'base64'));
+            const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
+            return presignedUrl;
+          }
+          // download from URI
+          const videoRes = await fetch(resolvedUri, {
+            headers: { Authorization: `Bearer ${await getAccessToken()}` },
+          });
+          if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`);
+          const videoBuffer = await videoRes.buffer();
+          if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
+          const fileName = `vertex_video_${Date.now()}.mp4`;
+          localPath = path.join(TMP_DIR, fileName);
+          fs.writeFileSync(localPath, videoBuffer);
+          const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
+          return presignedUrl;
         }
 
         console.log(`[Vertex Video] Generation complete, downloading from GCS: ${videoUri}`);
