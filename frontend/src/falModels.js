@@ -45,6 +45,16 @@ export const FAL_IMAGE_MODELS = [
     recommended: false,
     speed: 'medium',
   },
+  {
+    id: 'vertex-imagen4',
+    label: 'Imagen 4 (Vertex AI)',
+    sublabel: 'Google Vertex AI · Photorealistic',
+    sdk: 'vertex',
+    supportsRef: false,
+    tags: ['photorealistic'],
+    recommended: false,
+    speed: 'medium',
+  },
 ];
 
 export const FAL_VIDEO_MODELS = [

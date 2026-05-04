@@ -29,6 +29,7 @@ import {
   probeImageDimensions,
 } from './falVideoInputs.js';
 import { generateVeoVertexVideo } from './vertexVideo.js';
+import { generateVertexImage } from './vertexImage.js';
 
 // Google Auth client for Translation API only
 const googleAuth = new GoogleAuth({
@@ -545,7 +546,15 @@ app.post('/api/image', authenticate, async (req, res) => {
   try {
     const { imagePrompt, referenceImage, modelId, options } = req.body;
     if (!imagePrompt) return res.status(400).json({ error: 'imagePrompt is required' });
-    const publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, modelId || DEFAULT_IMAGE_MODEL_ID, options));
+    const resolvedModelId = modelId || DEFAULT_IMAGE_MODEL_ID;
+    const modelDef = FAL_IMAGE_MODELS.find(m => m.id === resolvedModelId);
+    const sdk = modelDef?.sdk ?? 'fal';
+    let publicUrl;
+    if (sdk === 'vertex') {
+      publicUrl = await generateVertexImage(imagePrompt, options || {});
+    } else {
+      publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, resolvedModelId, options));
+    }
     res.json({ imageUrl: publicUrl });
   } catch (error) {
     console.error(`Error in /api/image [model=${req.body?.modelId}]:`, error.message);
