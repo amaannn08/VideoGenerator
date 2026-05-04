@@ -258,7 +258,9 @@ export default function App() {
     if (sseRef.current) sseRef.current.close();
     setAutoRunStage('idle'); setAutoRunCurrentScene(null); setAutoRunProgress({});
     setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
-    window.localStorage.clear();
+    // Clear only session-related keys, not auth token
+    const keysToRemove = ['ai-video-characters','ai-video-primary-character-id','ai-video-environments','ai-video-lang','ai-video-arc','ai-video-script','ai-video-scenecount','ai-video-scenes','ai-video-merged','ai-video-image-model','ai-video-video-model'];
+    keysToRemove.forEach(k => window.localStorage.removeItem(k));
     setSessionId(null);
     sessionIdRef.current = null;
     window.history.replaceState({}, '', window.location.pathname);
