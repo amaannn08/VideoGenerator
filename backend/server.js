@@ -1174,7 +1174,7 @@ app.post('/api/sessions', authenticate, async (req, res) => {
 
 app.get('/api/sessions', authenticate, async (req, res) => {
   try {
-    const result = await query('SELECT id, narrative_arc, updated_at FROM sessions ORDER BY updated_at DESC');
+    const result = await query('SELECT id, name, narrative_arc, updated_at FROM sessions ORDER BY updated_at DESC');
     res.json({ sessions: result.rows });
   } catch (error) {
     console.error('Error fetching all sessions:', error);
@@ -1265,6 +1265,23 @@ app.delete('/api/sessions/:id', authenticate, async (req, res) => {
     res.json({ success: true, id });
   } catch (error) {
     console.error('Error deleting session:', error);
+    res.status(500).json({ error: getErrorMessage(error) });
+  }
+});
+
+app.patch('/api/sessions/:id/rename', authenticate, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { name } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ error: 'name is required' });
+    const result = await query(
+      'UPDATE sessions SET name = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 RETURNING id',
+      [name.trim(), id]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Session not found' });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error renaming session:', error);
     res.status(500).json({ error: getErrorMessage(error) });
   }
 });

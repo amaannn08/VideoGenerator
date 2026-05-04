@@ -1,5 +1,5 @@
-import React from 'react';
-import { User, MapPin, Film, FileText, ChevronRight, Cpu } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { User, MapPin, Film, FileText, ChevronRight, Cpu, Pencil, Trash2, Check, X } from 'lucide-react';
 
 const NAV = [
   { key: 'script',       label: 'Script',        Icon: FileText },
@@ -34,11 +34,97 @@ function SubList({ items, activeId, onSelect, accentColor, getLabel, getStatus }
   );
 }
 
+function SessionItem({ s, isActive, onSelect, onRename, onDelete }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [hovered, setHovered] = useState(false);
+  const inputRef = useRef(null);
+
+  const label = s.name || (s.narrative_arc ? s.narrative_arc.substring(0, 38) + (s.narrative_arc.length > 38 ? '…' : '') : `Session ${s.id.substring(0, 6)}`);
+
+  const startEdit = (e) => {
+    e.stopPropagation();
+    setDraft(s.name || label);
+    setEditing(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const commitEdit = async (e) => {
+    e?.stopPropagation();
+    if (draft.trim()) await onRename(s.id, draft.trim());
+    setEditing(false);
+  };
+
+  const cancelEdit = (e) => {
+    e?.stopPropagation();
+    setEditing(false);
+  };
+
+  const handleDelete = (e) => {
+    e.stopPropagation();
+    onDelete(s.id);
+  };
+
+  if (editing) {
+    return (
+      <div style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 8px', marginBottom:2 }}>
+        <input
+          ref={inputRef}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') commitEdit(); if (e.key === 'Escape') cancelEdit(); }}
+          style={{ flex:1, fontSize:12, background:'var(--bg-overlay)', color:'var(--text-primary)', border:'1px solid var(--amber)', borderRadius:6, padding:'4px 8px', outline:'none' }}
+          onClick={e => e.stopPropagation()}
+        />
+        <button onClick={commitEdit} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--green)', padding:2 }}><Check size={13} /></button>
+        <button onClick={cancelEdit} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:2 }}><X size={13} /></button>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{ position:'relative', display:'flex', alignItems:'center', marginBottom:2 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <button
+        className={`sidebar-session-pill${isActive ? ' active' : ''}`}
+        onClick={() => onSelect(s.id)}
+        title={s.name || s.narrative_arc || s.id}
+        style={{ flex:1, paddingRight: hovered ? 52 : 12 }}
+      >
+        <span className="session-dot" />
+        <span className="line-clamp-1" style={{ fontSize:12 }}>{label}</span>
+      </button>
+      {hovered && (
+        <div style={{ position:'absolute', right:6, display:'flex', gap:2, alignItems:'center' }}>
+          <button
+            onClick={startEdit}
+            title="Rename"
+            style={{ background:'var(--bg-overlay)', border:'none', cursor:'pointer', color:'var(--text-muted)', borderRadius:4, padding:'2px 4px', display:'flex', alignItems:'center' }}
+          >
+            <Pencil size={11} />
+          </button>
+          <button
+            onClick={handleDelete}
+            title="Delete"
+            style={{ background:'var(--red-dim)', border:'none', cursor:'pointer', color:'var(--red)', borderRadius:4, padding:'2px 4px', display:'flex', alignItems:'center' }}
+          >
+            <Trash2 size={11} />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar({
   sessions, sessionId, activeTab, onTabChange, onSessionSelect,
   scenes = [], activeSceneId, onSceneSelect,
   characters = [], activeCharId, onCharSelect,
   environments = [], activeEnvId, onEnvSelect,
+  onSessionRename, onSessionDelete,
 }) {
   return (
     <aside className="sidebar">
@@ -57,32 +143,18 @@ export default function Sidebar({
                 )}
               </button>
 
-              {/* Scenes sub-list */}
               {key==='scenes' && isActive && scenes.length>0 && (
-                <SubList
-                  items={scenes} activeId={activeSceneId} onSelect={onSceneSelect}
-                  accentColor="var(--amber)"
+                <SubList items={scenes} activeId={activeSceneId} onSelect={onSceneSelect} accentColor="var(--amber)"
                   getLabel={(s,i) => { const t=s.title||`Scene ${i+1}`; return t.length>22?t.substring(0,22)+'…':t; }}
-                  getStatus={(s) => s.status}
-                />
+                  getStatus={(s) => s.status} />
               )}
-
-              {/* Characters sub-list */}
               {key==='characters' && isActive && characters.length>0 && (
-                <SubList
-                  items={characters} activeId={activeCharId} onSelect={onCharSelect}
-                  accentColor="var(--amber)"
-                  getLabel={(c,i) => { const t=c.name||`Character ${i+1}`; return t.length>22?t.substring(0,22)+'…':t; }}
-                />
+                <SubList items={characters} activeId={activeCharId} onSelect={onCharSelect} accentColor="var(--amber)"
+                  getLabel={(c,i) => { const t=c.name||`Character ${i+1}`; return t.length>22?t.substring(0,22)+'…':t; }} />
               )}
-
-              {/* Environments sub-list */}
               {key==='environments' && isActive && environments.length>0 && (
-                <SubList
-                  items={environments} activeId={activeEnvId} onSelect={onEnvSelect}
-                  accentColor="var(--green)"
-                  getLabel={(e,i) => { const t=e.name||`Environment ${i+1}`; return t.length>22?t.substring(0,22)+'…':t; }}
-                />
+                <SubList items={environments} activeId={activeEnvId} onSelect={onEnvSelect} accentColor="var(--green)"
+                  getLabel={(e,i) => { const t=e.name||`Environment ${i+1}`; return t.length>22?t.substring(0,22)+'…':t; }} />
               )}
             </React.Fragment>
           );
@@ -96,17 +168,17 @@ export default function Sidebar({
         {sessions.length===0 && (
           <p style={{ fontSize:11, color:'var(--text-muted)', padding:'6px 16px' }}>No sessions yet.</p>
         )}
-        {sessions.map(s => {
-          const label = s.narrative_arc ? s.narrative_arc.substring(0,38)+(s.narrative_arc.length>38?'…':'') : `Session ${s.id.substring(0,6)}`;
-          return (
-            <button key={s.id} className={`sidebar-session-pill${s.id===sessionId?' active':''}`} onClick={()=>onSessionSelect(s.id)} title={s.narrative_arc||s.id}>
-              <span className="session-dot" />
-              <span className="line-clamp-1" style={{fontSize:12}}>{label}</span>
-            </button>
-          );
-        })}
+        {sessions.map(s => (
+          <SessionItem
+            key={s.id}
+            s={s}
+            isActive={s.id === sessionId}
+            onSelect={onSessionSelect}
+            onRename={onSessionRename}
+            onDelete={onSessionDelete}
+          />
+        ))}
       </div>
     </aside>
   );
 }
-

@@ -289,6 +289,33 @@ export default function App() {
     } catch(err) { alert(`Delete failed: ${err.message}`); }
   };
 
+  const handleSidebarDeleteSession = async (sid) => {
+    if (!window.confirm('Delete this session permanently?')) return;
+    try {
+      const r = await authenticatedFetch(`${API}/api/sessions/${sid}`, { method:'DELETE' });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error||'Failed');
+      setAllSessions(prev => prev.filter(s => s.id !== sid));
+      // If deleting the active session, reset
+      if (sid === sessionId) {
+        if (sseRef.current) sseRef.current.close();
+        setAutoRunStage('idle'); setAutoRunCurrentScene(null); setAutoRunProgress({});
+        setScript(''); setScenes([]); setGlobalCharacters([]); setPrimaryCharacterId(''); setNarrativeArc(''); setMergedVideo(null);
+        setSessionId(null);
+        sessionIdRef.current = null;
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    } catch(err) { alert(`Delete failed: ${err.message}`); }
+  };
+
+  const handleSidebarRenameSession = async (sid, name) => {
+    try {
+      const r = await authenticatedFetch(`${API}/api/sessions/${sid}/rename`, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ name }) });
+      if (!r.ok) { const d = await r.json(); throw new Error(d.error); }
+      setAllSessions(prev => prev.map(s => s.id === sid ? { ...s, name } : s));
+    } catch(err) { alert(`Rename failed: ${err.message}`); }
+  };
+
   // ── Script split ───────────────────────────────────────────────────────
   const handleSplitScript = async () => {
     if (!script.trim()) return;
@@ -576,6 +603,8 @@ export default function App() {
           environments={globalEnvironments}
           activeEnvId={activeEnvId}
           onEnvSelect={setActiveEnvId}
+          onSessionRename={handleSidebarRenameSession}
+          onSessionDelete={handleSidebarDeleteSession}
         />
 
         <main className="main-content">
