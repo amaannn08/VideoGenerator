@@ -9,7 +9,7 @@ import EnvironmentsPanel from './components/EnvironmentsPanel';
 import Login from './components/Login';
 import ReelView from './components/ReelView';
 import ModelsPage from './components/ModelsPage';
-import { DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './falModels';
+import { FAL_VIDEO_MODELS, DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './falModels';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -373,9 +373,10 @@ export default function App() {
     setAutoRunStage('running');
     setAutoRunProgress({});
     setMergedVideo(null);
+    const videoSdk = FAL_VIDEO_MODELS.find(m => m.id === videoModelId)?.sdk ?? 'fal';
     const body = JSON.stringify({
       scenes, globalCharacter:activeCharacter, globalCharacters, globalEnvironments,
-      targetLanguage, sessionId, imageModelId, videoModelId,
+      targetLanguage, sessionId, imageModelId, videoModelId, videoSdk,
     });
     authenticatedFetch(`${API}/api/auto-run`, { method:'POST', headers:{'Content-Type':'application/json'}, body })
       .then(async res => {

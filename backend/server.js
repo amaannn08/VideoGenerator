@@ -28,6 +28,7 @@ import {
   serializeFalError,
   probeImageDimensions,
 } from './falVideoInputs.js';
+import { generateVeoVertexVideo } from './vertexVideo.js';
 
 // Google Auth client for Translation API only
 const googleAuth = new GoogleAuth({
@@ -563,13 +564,27 @@ app.post('/api/video', authenticate, async (req, res) => {
   try {
     const { videoPrompt, imageUrl, duration, dialogue, modelId, options } = req.body;
     if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
-    const publicUrl = await withRetry(
-      () => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID }),
-      3,
-      3000,
-      (e) => !isNoMediaGeneratedError(e)
-    );
-    res.json({ videoUrl: publicUrl });
+
+    const modelDef = findVideoModel(modelId || DEFAULT_VIDEO_MODEL_ID);
+    const sdk = modelDef.sdk ?? 'fal';
+
+    if (sdk === 'vertex') {
+      // Vertex has its own internal poll loop — no withRetry wrapper
+      const publicUrl = await generateVeoVertexVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue });
+      return res.json({ videoUrl: publicUrl });
+    }
+
+    if (sdk === 'fal') {
+      const publicUrl = await withRetry(
+        () => generateFalVideo(videoPrompt, imageUrl, duration, 'videos', { ...options, dialogue, modelId: modelId || DEFAULT_VIDEO_MODEL_ID }),
+        3,
+        3000,
+        (e) => !isNoMediaGeneratedError(e)
+      );
+      return res.json({ videoUrl: publicUrl });
+    }
+
+    return res.status(400).json({ error: `Unknown sdk: ${sdk}` });
   } catch (error) {
     console.error(`Error in /api/video [model=${req.body?.modelId}]:`, error.message);
     if (error.body) {
@@ -1037,21 +1052,31 @@ app.post('/api/auto-run', authenticate, async (req, res) => {
           await withRetry(
             async () => {
               const sr = sceneResults[i];
-              const videoUrl = await generateFalVideo(
-                sr.videoPrompt,
-                sr.imageUrl,
-                sr.duration,
-                `sessions/${sessionId || 'temp'}/videos`,
-                {
-                  dialogue: sr.dialogue,
-                  modelId: videoModelId || DEFAULT_VIDEO_MODEL_ID,
-                  aspect_ratio: sr.aspectRatio || sr.aspect_ratio || '9:16',
-                  resolution: sr.resolution || '720p',
-                  generate_audio: sr.generate_audio,
-                  negative_prompt: sr.negative_prompt,
-                  cfg_scale: sr.cfg_scale,
-                }
-              );
+              const videoModelDef = findVideoModel(videoModelId || DEFAULT_VIDEO_MODEL_ID);
+              const videoSdk = videoModelDef.sdk ?? 'fal';
+              const videoUrl = videoSdk === 'vertex'
+                ? await generateVeoVertexVideo(
+                    sr.videoPrompt,
+                    sr.imageUrl,
+                    sr.duration,
+                    `sessions/${sessionId || 'temp'}/videos`,
+                    { dialogue: sr.dialogue }
+                  )
+                : await generateFalVideo(
+                    sr.videoPrompt,
+                    sr.imageUrl,
+                    sr.duration,
+                    `sessions/${sessionId || 'temp'}/videos`,
+                    {
+                      dialogue: sr.dialogue,
+                      modelId: videoModelId || DEFAULT_VIDEO_MODEL_ID,
+                      aspect_ratio: sr.aspectRatio || sr.aspect_ratio || '9:16',
+                      resolution: sr.resolution || '720p',
+                      generate_audio: sr.generate_audio,
+                      negative_prompt: sr.negative_prompt,
+                      cfg_scale: sr.cfg_scale,
+                    }
+                  );
               const genId = Math.random().toString(36).substr(2, 9);
               const generation = { id: genId, videoUrl, createdAt: Date.now(), isFinal: true };
               sceneResults[i].videoGenerations = [...(sceneResults[i].videoGenerations || []), generation];

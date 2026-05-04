@@ -272,6 +272,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
         cfg_scale: localCfgScale,
         generate_audio: localGenAudio
       };
+      const sdk = FAL_VIDEO_MODELS.find(m => m.id === videoModelId)?.sdk ?? 'fal';
       const r = await authenticatedFetch(`${API}/api/video`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -281,6 +282,7 @@ const SceneCard = memo(({ scene, index, updateScene, globalCharacter, globalChar
           duration: scene.duration, 
           dialogue: scene.dialogue, 
           modelId: videoModelId,
+          sdk,
           options
         }),
         signal: signal(),
