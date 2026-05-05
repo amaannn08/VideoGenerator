@@ -83,18 +83,6 @@ export const FAL_VIDEO_MODELS = [
     speed: 'medium',
   },
   {
-    id: 'fal-ai/veo3.1',
-    label: 'Veo 3.1 Pro',
-    sublabel: 'Google · Highest Quality + Native Audio',
-    sdk: 'fal',
-    supportsI2V: false,
-    allowedDurations: [4, 6, 8, 12],
-    hasAudio: true,
-    maxDuration: 12,
-    recommended: false,
-    speed: 'medium',
-  },
-  {
     id: 'fal-ai/veo3.1/lite',
     label: 'Veo 3.1 Lite',
     sublabel: 'Google · Fast Preview + Native Audio',
