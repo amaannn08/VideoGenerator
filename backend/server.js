@@ -973,7 +973,8 @@ app.post('/api/auto-run', authenticate, async (req, res) => {
           await withRetry(async () => {
             const prevScene = i > 0 ? sceneResults[i - 1] : null;
             const refImageUrl = prevScene?.imageUrl?.startsWith('http') ? prevScene.imageUrl : null;
-            const resolvedImgModelId = imageModelId || DEFAULT_IMAGE_MODEL_ID;
+            const knownImgIds = FAL_IMAGE_MODELS.map(m => m.id);
+            const resolvedImgModelId = knownImgIds.includes(imageModelId) ? imageModelId : DEFAULT_IMAGE_MODEL_ID;
             const imgModelDef = FAL_IMAGE_MODELS.find(m => m.id === resolvedImgModelId);
             const imgSdk = imgModelDef?.sdk ?? 'fal';
             let s3Url;
