@@ -546,7 +546,12 @@ app.post('/api/image', authenticate, async (req, res) => {
   try {
     const { imagePrompt, referenceImage, modelId, options } = req.body;
     if (!imagePrompt) return res.status(400).json({ error: 'imagePrompt is required' });
-    const resolvedModelId = modelId || DEFAULT_IMAGE_MODEL_ID;
+    // If the requested modelId is unknown (e.g. stale localStorage), fall back to default
+    const knownIds = FAL_IMAGE_MODELS.map(m => m.id);
+    const resolvedModelId = knownIds.includes(modelId) ? modelId : DEFAULT_IMAGE_MODEL_ID;
+    if (modelId && !knownIds.includes(modelId)) {
+      console.warn(`[Image] Unknown modelId "${modelId}", falling back to default: ${DEFAULT_IMAGE_MODEL_ID}`);
+    }
     const modelDef = FAL_IMAGE_MODELS.find(m => m.id === resolvedModelId);
     const sdk = modelDef?.sdk ?? 'fal';
     let publicUrl;

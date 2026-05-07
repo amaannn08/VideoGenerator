@@ -9,7 +9,7 @@ import EnvironmentsPanel from './components/EnvironmentsPanel';
 import Login from './components/Login';
 import ReelView from './components/ReelView';
 import ModelsPage from './components/ModelsPage';
-import { FAL_VIDEO_MODELS, DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './falModels';
+import { FAL_IMAGE_MODELS, FAL_VIDEO_MODELS, DEFAULT_IMAGE_MODEL_ID, DEFAULT_VIDEO_MODEL_ID } from './falModels';
 
 const API = (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000').trim().replace(/\/+$/, '');
 const getMediaUrl = (url) => url?.startsWith('http') ? url : `${API}${url}`;
@@ -100,8 +100,10 @@ export default function App() {
   const [imageModelId, setImageModelId]               = useLocalStorage('ai-video-image-model', DEFAULT_IMAGE_MODEL_ID);
   const [videoModelId, setVideoModelId]               = useLocalStorage('ai-video-video-model', DEFAULT_VIDEO_MODEL_ID);
 
-  // Migrate any stale video model id to the current default (vertex-veo3.1-lite)
+  // Reset any stale model ids that no longer exist in the registry (e.g. old fal models)
   useEffect(() => {
+    const knownImageIds = FAL_IMAGE_MODELS.map(m => m.id);
+    if (!knownImageIds.includes(imageModelId)) setImageModelId(DEFAULT_IMAGE_MODEL_ID);
     if (videoModelId !== DEFAULT_VIDEO_MODEL_ID) setVideoModelId(DEFAULT_VIDEO_MODEL_ID);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
