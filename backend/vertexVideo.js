@@ -29,29 +29,20 @@ export async function generateVeoVertexVideo(
 
   const ai = new GoogleGenAI({ vertexai: true, project, location });
 
-  // Vertex uses source: { prompt, image? } — not top-level prompt
-  const source = { prompt };
-
-  if (imageUrl) {
-    // Fetch S3 image and convert to base64 imageBytes
-    const imgRes = await fetch(imageUrl);
-    if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.status}`);
-    const imgBuffer = await imgRes.buffer();
-    const mimeType = (imgRes.headers.get('content-type') || 'image/jpeg').split(';')[0];
-    source.image = {
-      imageBytes: imgBuffer.toString('base64'),
-      mimeType,
-    };
-  }
-
+  // prompt is a top-level field — NOT nested in source{}
   const params = {
     model: 'veo-3.1-generate-001',
-    source,
+    prompt,
     config: {
       numberOfVideos: 1,
       durationSeconds: duration,
     },
   };
+
+  // Pass image as uri directly — no need to download or base64-encode
+  if (imageUrl) {
+    params.image = { uri: imageUrl };
+  }
 
   console.log(`[Vertex Video] Starting: duration=${duration}s i2v=${!!imageUrl}`);
 
@@ -62,38 +53,44 @@ export async function generateVeoVertexVideo(
   try {
     for (let attempt = 0; attempt < POLL_ATTEMPTS; attempt++) {
       await sleep(POLL_INTERVAL_MS);
-      // Use ai.operations.get (not getVideosOperation) per official SDK samples
       operation = await ai.operations.get({ operation });
 
       if (operation.done) {
-        const video = operation.response?.generatedVideos?.[0]?.video;
-        if (!video) {
-          throw new Error('Vertex AI returned a completed operation but no video was found');
+        if (operation.error) {
+          throw new Error(`[Vertex Video] Operation failed: ${JSON.stringify(operation.error)}`);
+        }
+
+        // Veo 3.1 Lite uses generatedSamples; older models use generatedVideos
+        const videoEntry =
+          operation.response?.generatedSamples?.[0]?.video ??
+          operation.response?.generatedVideos?.[0]?.video;
+
+        if (!videoEntry) {
+          console.error('[Vertex Video] Full response:', JSON.stringify(operation.response, null, 2));
+          throw new Error(
+            `Vertex AI returned a completed operation but no video was found. Response keys: ${Object.keys(operation.response || {}).join(', ')}`
+          );
         }
 
         if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
         const fileName = `vertex_video_${Date.now()}.mp4`;
         localPath = path.join(TMP_DIR, fileName);
 
-        if (video.videoBytes) {
-          // base64 inline bytes
-          fs.writeFileSync(localPath, Buffer.from(video.videoBytes, 'base64'));
-        } else if (video.uri) {
-          // GCS URI — download with auth
-          console.log(`[Vertex Video] Downloading from: ${video.uri}`);
+        if (videoEntry.videoBytes) {
+          fs.writeFileSync(localPath, Buffer.from(videoEntry.videoBytes, 'base64'));
+        } else if (videoEntry.uri) {
+          console.log(`[Vertex Video] Downloading from GCS: ${videoEntry.uri}`);
           const token = await getAccessToken();
-          const videoRes = await fetch(video.uri, {
+          const videoRes = await fetch(videoEntry.uri, {
             headers: { Authorization: `Bearer ${token}` },
           });
           if (!videoRes.ok) throw new Error(`Failed to download video: ${videoRes.status}`);
           const buf = await videoRes.buffer();
           fs.writeFileSync(localPath, buf);
         } else {
-          // Use SDK's files.download as fallback
-          await ai.files.download({
-            file: operation.response.generatedVideos[0],
-            downloadPath: localPath,
-          });
+          throw new Error(
+            `[Vertex Video] Unexpected video payload. Keys: ${Object.keys(videoEntry).join(', ')}`
+          );
         }
 
         const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
@@ -107,7 +104,7 @@ export async function generateVeoVertexVideo(
     throw new Error('Vertex AI video generation timed out after 600s');
   } finally {
     if (localPath && fs.existsSync(localPath)) {
-      try { fs.unlinkSync(localPath); } catch {}
+      try { fs.unlinkSync(localPath); } catch { }
     }
   }
 }

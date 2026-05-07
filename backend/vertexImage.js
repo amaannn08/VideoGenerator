@@ -5,15 +5,25 @@ import { uploadToS3 } from './s3.js';
 
 const TMP_DIR = '/tmp/ai-video-gen';
 
+// Map of our internal Vertex model IDs to their real API model strings
+const VERTEX_IMAGE_MODEL_MAP = {
+  'vertex-imagen4':       'imagen-4.0-generate-001',
+  'vertex-nano-banana-2': 'gemini-3.1-flash-image-generation',
+};
+
 /**
- * Generates an image via Google Vertex AI (Imagen 4) and returns a presigned S3 URL.
+ * Generates an image via Google Vertex AI and returns a presigned S3 URL.
+ * Supports:
+ *   - Imagen 4  (vertex-imagen4)         → ai.models.generateImages
+ *   - Nano Banana 2 (vertex-nano-banana-2) → ai.models.generateContent with IMAGE modality
  *
- * @param {string} prompt - Image generation prompt
- * @param {object} options - { aspect_ratio: '9:16'|'16:9'|'1:1' }
+ * @param {string} prompt    - Image generation prompt
+ * @param {object} options   - { aspect_ratio: '9:16'|'16:9'|'1:1' }
+ * @param {string} modelId   - Internal model ID (e.g. 'vertex-nano-banana-2')
  * @returns {Promise<string>} Presigned S3 URL for the generated image
  */
-export async function generateVertexImage(prompt, options = {}) {
-  const project = process.env.VERTEX_PROJECT;
+export async function generateVertexImage(prompt, options = {}, modelId = 'vertex-nano-banana-2') {
+  const project  = process.env.VERTEX_PROJECT;
   const location = process.env.VERTEX_LOCATION;
 
   if (!project || !location) {
@@ -24,27 +34,42 @@ export async function generateVertexImage(prompt, options = {}) {
 
   const ai = new GoogleGenAI({ vertexai: true, project, location });
 
-  // Map aspect ratio to Imagen format
-  const arMap = { '9:16': '9:16', '16:9': '16:9', '1:1': '1:1' };
-  const aspectRatio = arMap[options.aspect_ratio] || '9:16';
+  const apiModel = VERTEX_IMAGE_MODEL_MAP[modelId] || VERTEX_IMAGE_MODEL_MAP['vertex-nano-banana-2'];
+  console.log(`[Vertex Image] Using model: ${apiModel} (${modelId})`);
 
-  const response = await ai.models.generateImages({
-    model: 'imagen-4.0-generate-001',
-    prompt,
-    config: {
-      numberOfImages: 1,
-      aspectRatio,
-    },
-  });
+  let imageBytes;
 
-  const imageBytes = response?.generatedImages?.[0]?.image?.imageBytes;
-  if (!imageBytes) {
-    throw new Error('Vertex AI Imagen returned no image bytes');
+  if (modelId === 'vertex-imagen4') {
+    // ── Imagen path ──────────────────────────────────────────────────────────
+    const arMap = { '9:16': '9:16', '16:9': '16:9', '1:1': '1:1' };
+    const aspectRatio = arMap[options.aspect_ratio] || '9:16';
+
+    const response = await ai.models.generateImages({
+      model: apiModel,
+      prompt,
+      config: { numberOfImages: 1, aspectRatio },
+    });
+
+    imageBytes = response?.generatedImages?.[0]?.image?.imageBytes;
+    if (!imageBytes) throw new Error('Vertex AI Imagen returned no image bytes');
+
+  } else {
+    // ── Gemini flash-image path (Nano Banana 2) ──────────────────────────────
+    const response = await ai.models.generateContent({
+      model: apiModel,
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      config: { responseModalities: ['TEXT', 'IMAGE'] },
+    });
+
+    const parts = response?.candidates?.[0]?.content?.parts ?? [];
+    const imagePart = parts.find(p => p.inlineData?.mimeType?.startsWith('image/'));
+    if (!imagePart) throw new Error('Vertex AI Nano Banana returned no image in response');
+    imageBytes = imagePart.inlineData.data; // already base64
   }
 
-  // Write base64 image to temp file and upload to S3
+  // ── Write temp file & upload to S3 ────────────────────────────────────────
   if (!fs.existsSync(TMP_DIR)) fs.mkdirSync(TMP_DIR, { recursive: true });
-  const fileName = `vertex_image_${Date.now()}.png`;
+  const fileName  = `vertex_image_${Date.now()}.png`;
   const localPath = path.join(TMP_DIR, fileName);
 
   try {

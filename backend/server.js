@@ -551,7 +551,7 @@ app.post('/api/image', authenticate, async (req, res) => {
     const sdk = modelDef?.sdk ?? 'fal';
     let publicUrl;
     if (sdk === 'vertex') {
-      publicUrl = await generateVertexImage(imagePrompt, options || {});
+      publicUrl = await generateVertexImage(imagePrompt, options || {}, resolvedModelId);
     } else {
       publicUrl = await withRetry(() => generateFalImage(imagePrompt, referenceImage, resolvedModelId, options));
     }
@@ -968,11 +968,15 @@ app.post('/api/auto-run', authenticate, async (req, res) => {
           await withRetry(async () => {
             const prevScene = i > 0 ? sceneResults[i - 1] : null;
             const refImageUrl = prevScene?.imageUrl?.startsWith('http') ? prevScene.imageUrl : null;
-            const s3Url = await generateFalImage(
-              sceneResults[i].imagePrompt,
-              refImageUrl,
-              imageModelId || DEFAULT_IMAGE_MODEL_ID
-            );
+            const resolvedImgModelId = imageModelId || DEFAULT_IMAGE_MODEL_ID;
+            const imgModelDef = FAL_IMAGE_MODELS.find(m => m.id === resolvedImgModelId);
+            const imgSdk = imgModelDef?.sdk ?? 'fal';
+            let s3Url;
+            if (imgSdk === 'vertex') {
+              s3Url = await generateVertexImage(sceneResults[i].imagePrompt, {}, resolvedImgModelId);
+            } else {
+              s3Url = await generateFalImage(sceneResults[i].imagePrompt, refImageUrl, resolvedImgModelId);
+            }
             sceneResults[i].imageUrl = s3Url;
             sceneResults[i].status = 'image_done';
             await saveProgress();

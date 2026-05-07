@@ -4,3 +4,6 @@ tmp
 credentials.json
 .cursor/
 video.pem
+.cursor
+.kiro
+.vscode

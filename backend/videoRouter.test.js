@@ -105,20 +105,20 @@ describe('Backward-compatible default (no modelId)', () => {
     expect(defaultModel.id).toBe(DEFAULT_VIDEO_MODEL_ID);
   });
 
-  it('routes to the fal generator when no modelId is provided (default is fal-backed)', async () => {
+  it('routes to the vertex generator when no modelId is provided (default is vertex-backed)', async () => {
     mockFalGenerator.mockClear();
     mockVertexGenerator.mockClear();
 
     const { generator, sdk } = await routeVideoRequest(undefined);
 
-    // The default model must be fal-backed (DEFAULT_VIDEO_MODEL_ID is 'fal-ai/veo3.1/lite')
+    // The default model must be vertex-backed (DEFAULT_VIDEO_MODEL_ID is 'vertex-veo3.1-lite')
     const defaultModel = findVideoModel(DEFAULT_VIDEO_MODEL_ID);
-    expect(defaultModel.sdk ?? 'fal').toBe('fal');
+    expect(defaultModel.sdk ?? 'fal').toBe('vertex');
 
-    expect(generator).toBe('fal');
-    expect(sdk).toBe('fal');
-    expect(mockFalGenerator).toHaveBeenCalledOnce();
-    expect(mockVertexGenerator).not.toHaveBeenCalled();
+    expect(generator).toBe('vertex');
+    expect(sdk).toBe('vertex');
+    expect(mockVertexGenerator).toHaveBeenCalledOnce();
+    expect(mockFalGenerator).not.toHaveBeenCalled();
   });
 
   it('resolves the same model whether modelId is undefined, null, or the explicit default id', async () => {
