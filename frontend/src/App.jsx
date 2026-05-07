@@ -100,6 +100,12 @@ export default function App() {
   const [imageModelId, setImageModelId]               = useLocalStorage('ai-video-image-model', DEFAULT_IMAGE_MODEL_ID);
   const [videoModelId, setVideoModelId]               = useLocalStorage('ai-video-video-model', DEFAULT_VIDEO_MODEL_ID);
 
+  // Migrate any stale video model id to the current default (vertex-veo3.1-lite)
+  useEffect(() => {
+    if (videoModelId !== DEFAULT_VIDEO_MODEL_ID) setVideoModelId(DEFAULT_VIDEO_MODEL_ID);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // ── Transient state ────────────────────────────────────────────────────
   const [loadingScenes, setLoadingScenes]             = useState(false);
   const [merging, setMerging]                         = useState(false);

@@ -47,7 +47,7 @@ const completedOperation = () => ({
   name: OPERATION_NAME,
   done: true,
   response: {
-    generatedSamples: [{ video: { videoBytes: FAKE_VIDEO_BYTES } }],
+    generatedVideos: [{ video: { videoBytes: FAKE_VIDEO_BYTES } }],
   },
 });
 
@@ -86,7 +86,16 @@ describe('2.1 Vertex_Generator happy path', () => {
     expect(mockUploadToS3).toHaveBeenCalledOnce();
   });
 
-  it('passes imageUrl as image.uri when provided', async () => {
+  it('passes imageUrl as image.imageBytes when provided', async () => {
+    const fakeImageBuf = Buffer.from('fake-image-data');
+    // node-fetch is already imported in vertexVideo.js; mock it at module level
+    const nodeFetch = await import('node-fetch');
+    const fetchSpy = vi.spyOn(nodeFetch, 'default').mockResolvedValueOnce({
+      ok: true,
+      headers: { get: () => 'image/jpeg' },
+      buffer: async () => fakeImageBuf,
+    });
+
     const promise = generateVeoVertexVideo(
       'a cinematic sunset',
       'https://example.com/frame.jpg',
@@ -96,7 +105,12 @@ describe('2.1 Vertex_Generator happy path', () => {
     await promise;
 
     const callArg = mockGenerateVideos.mock.calls[0][0];
-    expect(callArg.image).toEqual({ uri: 'https://example.com/frame.jpg' });
+    expect(callArg.image).toMatchObject({
+      imageBytes: fakeImageBuf.toString('base64'),
+      mimeType: 'image/jpeg',
+    });
+
+    fetchSpy.mockRestore();
   });
 
   it('does not include image field when imageUrl is null', async () => {

@@ -29,19 +29,31 @@ export async function generateVeoVertexVideo(
 
   const ai = new GoogleGenAI({ vertexai: true, project, location });
 
-  // prompt is a top-level field — NOT nested in source{}
   const params = {
     model: 'veo-3.1-generate-001',
     prompt,
     config: {
       numberOfVideos: 1,
       durationSeconds: duration,
+      aspectRatio: '9:16',
+      personGeneration: 'allow_all',
+      generateAudio: true,
+      resolution: '720p',
     },
   };
 
-  // Pass image as uri directly — no need to download or base64-encode
+  // SDK Image type only accepts imageBytes (base64) or gcsUri — no 'uri' field
   if (imageUrl) {
-    params.image = { uri: imageUrl };
+    if (imageUrl.startsWith('gs://')) {
+      params.image = { gcsUri: imageUrl };
+    } else if (imageUrl.startsWith('http')) {
+      const imgRes = await fetch(imageUrl);
+      if (!imgRes.ok) throw new Error(`Failed to fetch reference image: ${imgRes.status}`);
+      const mimeType = (imgRes.headers.get('content-type') || 'image/jpeg').split(';')[0];
+      const buf = await imgRes.buffer();
+      params.image = { imageBytes: buf.toString('base64'), mimeType };
+    }
+    console.log(`[Vertex Video] Using reference image (i2v)`);
   }
 
   console.log(`[Vertex Video] Starting: duration=${duration}s i2v=${!!imageUrl}`);
@@ -60,10 +72,8 @@ export async function generateVeoVertexVideo(
           throw new Error(`[Vertex Video] Operation failed: ${JSON.stringify(operation.error)}`);
         }
 
-        // Veo 3.1 Lite uses generatedSamples; older models use generatedVideos
-        const videoEntry =
-          operation.response?.generatedSamples?.[0]?.video ??
-          operation.response?.generatedVideos?.[0]?.video;
+        // SDK type: GenerateVideosResponse.generatedVideos
+        const videoEntry = operation.response?.generatedVideos?.[0]?.video;
 
         if (!videoEntry) {
           console.error('[Vertex Video] Full response:', JSON.stringify(operation.response, null, 2));
