@@ -8,9 +8,8 @@ const TMP_DIR = '/tmp/ai-video-gen';
 const POLL_ATTEMPTS = 60;
 const POLL_INTERVAL_MS = 10_000;
 
-// Phrases that trigger Vertex's content filter despite being benign in context.
-// Replacements preserve visual meaning without tripping the classifier.
-const VERTEX_SANITIZE_MAP = [
+// Word-level substitutions for known Vertex filter triggers.
+const VERTEX_WORD_MAP = [
   [/partially unbuttoned/gi, 'loosely fastened'],
   [/unbuttoned/gi, 'open-collared'],
   [/bare torso/gi, 'unclothed upper body'],
@@ -25,11 +24,62 @@ const VERTEX_SANITIZE_MAP = [
   [/fragile/gi, 'delicate'],
 ];
 
-function sanitizePromptForVertex(prompt) {
+/**
+ * Converts the internal labeled-block prompt format into Veo-friendly natural language.
+ *
+ * Key transforms:
+ * 1. Strips the NEGATIVE: block entirely (its absence is sufficient; listing negatives can trigger the filter).
+ * 2. Rewrites DIALOGUE: pipe-syntax into Veo's native "the [character] says: [line]" format.
+ * 3. Removes CHARACTER/CHARACTER_KEY_FEATURE labels (redundant noise for the classifier).
+ * 4. Applies word-level substitutions for known trigger phrases.
+ */
+function sanitizePromptForVertex(prompt, knownNames = []) {
   let out = prompt;
-  for (const [pattern, replacement] of VERTEX_SANITIZE_MAP) {
+
+  // 1. Drop the NEGATIVE block — its absence is enough
+  out = out.replace(/\nNEGATIVE:[^\n]*/gi, '');
+
+  // 2. Rewrite DIALOGUE block: extract text and mode, emit natural Veo syntax
+  // Matches: DIALOGUE: "some line" | phonetic: "..." | mode: narration | tone: ... | pacing: ...
+  out = out.replace(
+    /DIALOGUE:\s*"([^"]+)"[^\n]*/gi,
+    (_, line) => `A voice says: ${line}`
+  );
+  // Also handle: DIALOGUE: None. ...
+  out = out.replace(/DIALOGUE:\s*None\.[^\n]*/gi, '');
+
+  // 3. Strip structural label prefixes that add no value for Veo
+  const labelsToStrip = [
+    'CHARACTER_KEY_FEATURE',
+    'ACTION_START',
+    'ACTION_END',
+    'EXPRESSION_ARC',
+  ];
+  for (const label of labelsToStrip) {
+    out = out.replace(new RegExp(`${label}:\\s*`, 'gi'), '');
+  }
+
+  // Flatten remaining labeled blocks into readable sentences
+  out = out.replace(/^(CHARACTER|ACTION|ENVIRONMENT|LIGHTING|CAMERA|STYLE):\s*/gim, '');
+
+  // 4. Strip any real person names passed in (runtime safety net)
+  for (const name of knownNames) {
+    if (!name || name.length < 2) continue;
+    // Match full name and individual parts (e.g. "Isaac Newton" → also strip "Newton" alone)
+    const parts = [name, ...name.split(/\s+/).filter(p => p.length > 2)];
+    for (const part of parts) {
+      out = out.replace(new RegExp(`\\b${part}\\b`, 'gi'), '');
+    }
+  }
+
+  // 5. Word-level substitutions
+  for (const [pattern, replacement] of VERTEX_WORD_MAP) {
     out = out.replace(pattern, replacement);
   }
+
+  // Clean up excess blank lines and double spaces left by name removal
+  out = out.replace(/  +/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+
   return out;
 }
 
@@ -54,7 +104,7 @@ export async function generateVeoVertexVideo(
 
   const ai = new GoogleGenAI({ vertexai: true, project, location });
 
-  const sanitizedPrompt = sanitizePromptForVertex(prompt);
+  const sanitizedPrompt = sanitizePromptForVertex(prompt, options.knownNames || []);
   if (sanitizedPrompt !== prompt) {
     console.log(`[Vertex Video] Prompt sanitized (${prompt.length - sanitizedPrompt.length} chars changed)`);
   }

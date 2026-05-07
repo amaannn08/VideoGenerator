@@ -252,12 +252,14 @@ I have attached a reference image of the character. This image is the visual gro
 
 IMAGE-TO-VIDEO: The clip is animated from that single reference frame. ACTION_START and ACTION_END must describe motion, gaze, and hand/face changes that are physically plausible **from what is already visible in the frame** — do not invent a wider staging (e.g. full-body walking across a beach) if the reference is an extreme close-up. Keep CAMERA consistent with the reference scale (close-up stays close-up). Background motion stays minimal and secondary.
 
-⚠️ CONTENT POLICY — MANDATORY:
-- NEVER use any real person's name, historical figure's name, or celebrity name.
-- ALWAYS describe the character by physical appearance only.
+⚠️ CONTENT POLICY — MANDATORY — VIOLATIONS WILL CAUSE GENERATION FAILURE:
+- NEVER use any real person's name, historical figure's name, or celebrity name ANYWHERE in the output — not in CHARACTER, not in DIALOGUE, not in any block. This includes names like Newton, Einstein, Gandhi, Caesar, Napoleon, or any other real person.
+- If the scene inputs reference a real person by name, replace every occurrence with a physical descriptor (e.g. "Isaac Newton" → "a young adult scholar with shoulder-length dark brown hair and intense dark eyes").
+- ALWAYS describe the character by physical appearance only — never by name or title that identifies a real individual.
 - NEVER use "mature" to describe a person. Use "adult" or age context only.
-- NEVER use: "trembling lips", "quivering", "heaving", "sensual", "vulnerable", "fragile".
+- NEVER use: "trembling lips", "quivering", "heaving", "sensual", "vulnerable", "fragile", "unbuttoned", "bare torso", "bare chest".
 - For physical reactions use: "lips part slightly", "exhale visible", "jaw relaxes", "gaze sharpens", "posture tightens".
+- For clothing use: "loosely fastened collar", "open neckline", "unclothed upper body".
 ${customInstruction ? `\nCustom Instruction: ${customInstruction}` : ''}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

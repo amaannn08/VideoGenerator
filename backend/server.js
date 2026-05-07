@@ -576,7 +576,7 @@ app.get('/api/models', authenticate, (_req, res) => {
 
 app.post('/api/video', authenticate, async (req, res) => {
   try {
-    const { videoPrompt, imageUrl, duration, dialogue, modelId, options } = req.body;
+    const { videoPrompt, imageUrl, duration, dialogue, modelId, options, characterName } = req.body;
     if (!videoPrompt) return res.status(400).json({ error: 'videoPrompt is required' });
 
     const modelDef = findVideoModel(modelId || DEFAULT_VIDEO_MODEL_ID);
@@ -584,7 +584,7 @@ app.post('/api/video', authenticate, async (req, res) => {
 
     if (sdk === 'vertex') {
       // Vertex has its own internal poll loop — no withRetry wrapper
-      const publicUrl = await generateVeoVertexVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue });
+      const publicUrl = await generateVeoVertexVideo(videoPrompt, imageUrl, duration, 'videos', { dialogue, knownNames: characterName ? [characterName] : [] });
       return res.json({ videoUrl: publicUrl });
     }
 
@@ -1079,7 +1079,7 @@ app.post('/api/auto-run', authenticate, async (req, res) => {
                     sr.imageUrl,
                     sr.duration,
                     `sessions/${sessionId || 'temp'}/videos`,
-                    { dialogue: sr.dialogue }
+                    { dialogue: sr.dialogue, knownNames: sr.characterName ? [sr.characterName] : (fallbackCharacter?.name ? [fallbackCharacter.name] : []) }
                   )
                 : await generateFalVideo(
                     sr.videoPrompt,
