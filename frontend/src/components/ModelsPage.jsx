@@ -187,7 +187,7 @@ export default function ModelsPage({ imageModelId, videoModelId, onImageModelCha
               background: 'var(--amber-glow)', padding: '4px 10px', borderRadius: 8,
               border: '1px solid rgba(245,166,35,0.2)',
             }}>
-              {FAL_IMAGE_MODELS.find(m => m.id === imageModelId)?.label || 'Nano Banana 2'}
+              {FAL_IMAGE_MODELS.find(m => m.id === imageModelId)?.label || 'Imagen 3'}
             </span>
           </div>
         </div>

@@ -43,7 +43,7 @@ export default function Topbar({ onNew, onLogout, onOpenReel, hasScenes, imageMo
           onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border-subtle)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}
         >
           <ImageIcon size={10} />
-          <span>{imgModel?.label || 'Nano Banana 2'}</span>
+          <span>{imgModel?.label || 'Imagen 3'}</span>
         </button>
         <button
           onClick={onOpenModels}

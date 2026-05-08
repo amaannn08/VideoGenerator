@@ -183,9 +183,15 @@ export async function generateVeoVertexVideo(
           );
         }
 
-        const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
-        console.log(`[Vertex Video] Uploaded to S3`);
-        return presignedUrl;
+        try {
+          const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
+          console.log(`[Vertex Video] Uploaded to S3`);
+          return presignedUrl;
+        } catch (s3Error) {
+          console.warn(`[Vertex Video] S3 unavailable, serving locally: ${s3Error.message}`);
+          const fileName = path.basename(localPath);
+          return `http://localhost:${process.env.PORT || 3000}/tmp/${fileName}`;
+        }
       }
 
       console.log(`[Vertex Video] Poll ${attempt + 1}/${POLL_ATTEMPTS}: pending…`);
@@ -193,9 +199,7 @@ export async function generateVeoVertexVideo(
 
     throw new Error('Vertex AI video generation timed out after 600s');
   } finally {
-    if (localPath && fs.existsSync(localPath)) {
-      try { fs.unlinkSync(localPath); } catch { }
-    }
+    // Don't delete if S3 failed — file is being served locally
   }
 }
 
