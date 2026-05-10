@@ -53,7 +53,7 @@ export async function generateVertexImage(prompt, options = {}, modelId = 'verte
   try {
     fs.writeFileSync(localPath, Buffer.from(bytes, 'base64'));
     console.log(`[Vertex Image] Saved: ${localPath}`);
-    
+
     try {
       const presignedUrl = await uploadToS3(localPath, mimeType, 'images');
       console.log(`[Vertex Image] Uploaded to S3`);

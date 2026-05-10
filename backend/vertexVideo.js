@@ -83,8 +83,15 @@ function sanitizePromptForVertex(prompt, knownNames = []) {
   return out;
 }
 
+// Always use Veo 3.1 Lite — full model is intentionally excluded
+const VERTEX_VIDEO_MODEL_MAP = {
+  'vertex-veo3.1-lite': 'veo-3.1-lite-generate-001',
+};
+const VERTEX_VIDEO_MODEL_DEFAULT = 'veo-3.1-lite-generate-001';
+
 /**
  * Generates a video via Google Vertex AI (Veo 3.1) and returns a presigned S3 URL.
+ * @param {string} [options.modelId] - Internal model ID from the registry (e.g. 'vertex-veo3.1-lite').
  */
 export async function generateVeoVertexVideo(
   prompt,
@@ -109,8 +116,11 @@ export async function generateVeoVertexVideo(
     console.log(`[Vertex Video] Prompt sanitized (${prompt.length - sanitizedPrompt.length} chars changed)`);
   }
 
+  const vertexModel = VERTEX_VIDEO_MODEL_MAP[options.modelId] || VERTEX_VIDEO_MODEL_DEFAULT;
+  console.log(`[Vertex Video] Using model: ${vertexModel} (requested: ${options.modelId || 'none → default'})`);
+
   const params = {
-    model: 'veo-3.1-generate-001',
+    model: vertexModel,
     prompt: sanitizedPrompt,
     config: {
       numberOfVideos: 1,
