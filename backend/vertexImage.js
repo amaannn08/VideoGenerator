@@ -57,6 +57,7 @@ export async function generateVertexImage(prompt, options = {}, modelId = 'verte
     try {
       const presignedUrl = await uploadToS3(localPath, mimeType, 'images');
       console.log(`[Vertex Image] Uploaded to S3`);
+      if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
       return presignedUrl;
     } catch (s3Error) {
       // S3 not available locally — serve the file directly via backend

@@ -676,11 +676,21 @@ async function generateFalImage(imagePrompt, referenceImageUrl, modelId, options
     const fileName = `image_${Date.now()}.png`;
     const localPath = path.join(TMP_DIR, fileName);
     fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
-    return await uploadToS3(localPath, 'image/png', 'images');
+    
+    let resultUrl;
+    try {
+      resultUrl = await uploadToS3(localPath, 'image/png', 'images');
+    } catch (s3Err) {
+      console.warn('[Image Fallback] S3 Upload failed:', s3Err.message);
+    }
+    
+    if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+    if (resultUrl) return resultUrl;
+    
   } catch (err) {
     console.warn('[Image Fallback] Returning raw Fal URL:', err.message);
-    return falUrl;
   }
+  return falUrl;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -800,9 +810,12 @@ async function generateFalVideo(prompt, imageUrl, duration, s3Prefix = 'videos',
   fs.writeFileSync(localPath, Buffer.from(await resp.arrayBuffer()));
   console.log(`[fal video] saved to ${localPath}`);
   try {
-    return await uploadToS3(localPath, 'video/mp4', s3Prefix);
+    const resultUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
+    if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
+    return resultUrl;
   } catch (s3Error) {
     console.warn('[S3 Upload Fallback] S3 upload failed, returning raw Fal URL instead:', s3Error.message);
+    if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
     return falUrl;
   }
 }
@@ -852,8 +865,17 @@ async function mergeVideos(videoUrls, s3Prefix = 'merged') {
       });
   });
 
-  const publicUrl = await uploadToS3(mergedPath, 'video/mp4', s3Prefix);
-  return publicUrl;
+  try {
+    const publicUrl = await uploadToS3(mergedPath, 'video/mp4', s3Prefix);
+    return publicUrl;
+  } finally {
+    if (fs.existsSync(mergedPath)) fs.unlinkSync(mergedPath);
+    for (const p of localPaths) {
+      if (p.startsWith(TMP_DIR) && fs.existsSync(p)) {
+        fs.unlinkSync(p);
+      }
+    }
+  }
 }
 
 app.post('/api/merge', authenticate, async (req, res) => {

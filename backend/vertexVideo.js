@@ -196,6 +196,7 @@ export async function generateVeoVertexVideo(
         try {
           const presignedUrl = await uploadToS3(localPath, 'video/mp4', s3Prefix);
           console.log(`[Vertex Video] Uploaded to S3`);
+          if (fs.existsSync(localPath)) fs.unlinkSync(localPath);
           return presignedUrl;
         } catch (s3Error) {
           console.warn(`[Vertex Video] S3 unavailable, serving locally: ${s3Error.message}`);
